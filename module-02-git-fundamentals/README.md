@@ -442,10 +442,12 @@ See the detailed guide: **[docs/github-flow.md](./docs/github-flow.md)**
 
 ## References
 
-- **Official Git documentation** — search "Git reference manual git-scm.com"
-- **Pro Git Book** — search "Pro Git book online free" (free, comprehensive)
-- **GitHub Flow guide** — search "GitHub Flow GitHub docs"
-- **Conventional Commits** — search "Conventional Commits specification"
+- 📖 **Official Git Documentation** — [git-scm.com/doc](https://git-scm.com/doc)
+- 📕 **Pro Git Book** (free online) — [git-scm.com/book/en/v2](https://git-scm.com/book/en/v2)
+- 🌊 **GitHub Flow Guide** — [docs.github.com/en/get-started/using-github/github-flow](https://docs.github.com/en/get-started/using-github/github-flow)
+- ✏️ **Conventional Commits Specification** — [conventionalcommits.org](https://www.conventionalcommits.org/en/v1.0.0/)
+- 🖥️ **GitHub CLI Manual** (`gh pr create`, etc.) — [cli.github.com/manual](https://cli.github.com/manual/)
+- 🔑 **Connecting to GitHub with SSH** — [docs.github.com/en/authentication](https://docs.github.com/en/authentication/connecting-to-github-with-ssh)
 
 ---
 

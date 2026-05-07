@@ -215,22 +215,30 @@ You've completed the course! To continue growing:
 - **GitHub Actions at scale:** Enterprise patterns, runner groups, cost optimization
 
 ### Certifications
-- GitHub Actions certification — search "GitHub Actions certification" on GitHub's learning site
-- GitHub Advanced Security certification
+- 🏅 **GitHub Actions Certification** — [examregistration.github.com](https://examregistration.github.com/)
+- 🔐 **GitHub Advanced Security Certification** — [examregistration.github.com](https://examregistration.github.com/)
 
 ### Community
-- **GitHub Actions Marketplace:** Browse and contribute actions
-- **awesome-github-actions** on GitHub: curated list of resources
-- **GitHub Community discussions** — search "GitHub Community GitHub Actions"
+- 🛒 **GitHub Actions Marketplace** — [github.com/marketplace?type=actions](https://github.com/marketplace?type=actions)
+- ⭐ **awesome-github-actions** (curated resources) — [github.com/sdras/awesome-actions](https://github.com/sdras/awesome-actions)
+- 💬 **GitHub Community Discussions** — [github.com/orgs/community/discussions](https://github.com/orgs/community/discussions)
 
 ---
 
 ## References
 
-- **GitHub Actions documentation** — docs.github.com/actions
-- **GitHub Environments** — search "Using environments for deployment GitHub docs"
-- **Security hardening** — search "Security hardening for GitHub Actions"
-- **OIDC for cloud auth** — search "About security hardening with OpenID Connect"
+- ⚡ **GitHub Actions Documentation** — [docs.github.com/en/actions](https://docs.github.com/en/actions)
+- 🏗️ **Using Environments for Deployment** — [docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
+- 🔒 **Security Hardening for GitHub Actions** — [docs.github.com/en/actions/security-guides/security-hardening-for-github-actions](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions)
+- 🔑 **About Security Hardening with OpenID Connect (OIDC)** — [docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect](https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect)
+- 🌐 **Flask** (Python Web Framework) — [flask.palletsprojects.com](https://flask.palletsprojects.com/)
+- 🦄 **Gunicorn** (Python WSGI Server) — [gunicorn.org](https://gunicorn.org/)
+- 🐳 **Docker Multi-Stage Builds** — [docs.docker.com/build/building/multi-stage](https://docs.docker.com/build/building/multi-stage/)
+- 🧪 **pytest** — [docs.pytest.org](https://docs.pytest.org/en/latest/)
+- 📐 **Flake8** (Python Linter) — [flake8.pycqa.org](https://flake8.pycqa.org/en/latest/)
+- 🔍 **pip-audit** (Dependency Vulnerability Scanner) — [pypi.org/project/pip-audit](https://pypi.org/project/pip-audit/)
+- 🛡️ **Safety** (Python Dependency Checker) — [pypi.org/project/safety](https://pypi.org/project/safety/)
+- 🏅 **GitHub Actions Certification** — [examregistration.github.com](https://examregistration.github.com/)
 
 ---
 

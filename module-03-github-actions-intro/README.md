@@ -300,10 +300,14 @@ For learning purposes in this course, we use `@v4` style tags. In production, us
 
 ## References
 
-- **GitHub Actions documentation** — search "Understanding GitHub Actions docs.github.com"
-- **Quickstart guide** — search "Quickstart for GitHub Actions"
-- **GitHub Actions Marketplace** — marketplace.github.com/actions
-- **actions/checkout source** — search "actions/checkout GitHub"
+- ⚡ **Understanding GitHub Actions** — [docs.github.com/en/actions/learn-github-actions/understanding-github-actions](https://docs.github.com/en/actions/learn-github-actions/understanding-github-actions)
+- 🚀 **Quickstart for GitHub Actions** — [docs.github.com/en/actions/quickstart](https://docs.github.com/en/actions/quickstart)
+- 🛒 **GitHub Actions Marketplace** — [github.com/marketplace?type=actions](https://github.com/marketplace?type=actions)
+- 📦 **actions/checkout** — [github.com/actions/checkout](https://github.com/actions/checkout)
+- 🐍 **actions/setup-python** — [github.com/actions/setup-python](https://github.com/actions/setup-python)
+- 💾 **actions/cache** — [github.com/actions/cache](https://github.com/actions/cache)
+- 📤 **actions/upload-artifact** — [github.com/actions/upload-artifact](https://github.com/actions/upload-artifact)
+- 🖥️ **About GitHub-hosted Runners** — [docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners)
 
 ---
 

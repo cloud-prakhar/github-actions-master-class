@@ -328,10 +328,11 @@ Run a step regardless of whether previous steps failed:
 
 ## References
 
-- **Workflow syntax: jobs** — search "Workflow syntax jobs GitHub Actions"
-- **Workflow syntax: steps** — search "Workflow syntax steps GitHub Actions"
-- **Environment variables** — search "Environment variables GitHub Actions"
-- **Contexts** — search "Contexts GitHub Actions"
+- ⚙️ **Workflow Syntax for GitHub Actions** — [docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions)
+- 🌍 **Variables in GitHub Actions** — [docs.github.com/en/actions/learn-github-actions/variables](https://docs.github.com/en/actions/learn-github-actions/variables)
+- 📋 **Contexts in GitHub Actions** — [docs.github.com/en/actions/learn-github-actions/contexts](https://docs.github.com/en/actions/learn-github-actions/contexts)
+- 🖥️ **About GitHub-hosted Runners** — [docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners)
+- 🔧 **Workflow Commands for GitHub Actions** (`GITHUB_OUTPUT`, `GITHUB_ENV`) — [docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions](https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions)
 
 ---
 

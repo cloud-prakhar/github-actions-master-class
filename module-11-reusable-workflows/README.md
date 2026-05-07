@@ -798,12 +798,14 @@ Create a minimal JavaScript action `.github/actions/parse-version/action.yml` th
 
 ## Resources
 
-- [GitHub Docs: Reusing workflows](https://docs.github.com/en/actions/using-workflows/reusing-workflows)
-- [GitHub Docs: Creating a composite action](https://docs.github.com/en/actions/creating-actions/creating-a-composite-action)
-- [GitHub Docs: Creating a JavaScript action](https://docs.github.com/en/actions/creating-actions/creating-a-javascript-action)
-- [GitHub Docs: Metadata syntax for GitHub Actions](https://docs.github.com/en/actions/creating-actions/metadata-syntax-for-github-actions)
-- [GitHub Actions Toolkit](https://github.com/actions/toolkit)
-- [GitHub Actions Marketplace](https://github.com/marketplace?type=actions)
+- 🔁 **Reusing Workflows** — [docs.github.com/en/actions/using-workflows/reusing-workflows](https://docs.github.com/en/actions/using-workflows/reusing-workflows)
+- 🧩 **Creating a Composite Action** — [docs.github.com/en/actions/creating-actions/creating-a-composite-action](https://docs.github.com/en/actions/creating-actions/creating-a-composite-action)
+- 🟨 **Creating a JavaScript Action** — [docs.github.com/en/actions/creating-actions/creating-a-javascript-action](https://docs.github.com/en/actions/creating-actions/creating-a-javascript-action)
+- 🐳 **Creating a Docker Container Action** — [docs.github.com/en/actions/creating-actions/creating-a-docker-container-action](https://docs.github.com/en/actions/creating-actions/creating-a-docker-container-action)
+- 📄 **Metadata Syntax for GitHub Actions** (`action.yml`) — [docs.github.com/en/actions/creating-actions/metadata-syntax-for-github-actions](https://docs.github.com/en/actions/creating-actions/metadata-syntax-for-github-actions)
+- 🛠️ **GitHub Actions Toolkit** (`@actions/core`, `@actions/github`) — [github.com/actions/toolkit](https://github.com/actions/toolkit)
+- 🛒 **GitHub Actions Marketplace** — [github.com/marketplace?type=actions](https://github.com/marketplace?type=actions)
+- 🔒 **Security Hardening for GitHub Actions** (supply-chain safety) — [docs.github.com/en/actions/security-guides/security-hardening-for-github-actions](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions)
 
 ---
 

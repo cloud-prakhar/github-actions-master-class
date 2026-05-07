@@ -360,9 +360,11 @@ jobs:
 
 ## References
 
-- **Events that trigger workflows** — search "Events that trigger workflows GitHub Actions docs"
-- **Workflow syntax: on** — search "Workflow syntax for GitHub Actions on"
-- **Cron expression tester** — search "crontab guru" (interactive cron builder)
+- 🔔 **Events that Trigger Workflows** — [docs.github.com/en/actions/using-workflows/events-that-trigger-workflows](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows)
+- ⚙️ **Workflow Syntax for GitHub Actions** — [docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions)
+- ⏱️ **Cron Expression Tester** (crontab.guru) — [crontab.guru](https://crontab.guru/)
+- 🖥️ **GitHub CLI: `gh workflow run`** — [cli.github.com/manual/gh_workflow_run](https://cli.github.com/manual/gh_workflow_run)
+- 🔒 **`pull_request_target` Security Guide** — [docs.github.com/en/actions/security-guides/security-hardening-for-github-actions](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections)
 
 ---
 

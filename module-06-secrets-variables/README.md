@@ -975,4 +975,17 @@ The golden rules:
 
 ---
 
+## References
+
+- 🔐 **Encrypted Secrets in GitHub Actions** — [docs.github.com/en/actions/security-guides/encrypted-secrets](https://docs.github.com/en/actions/security-guides/encrypted-secrets)
+- 🌍 **Variables in GitHub Actions** — [docs.github.com/en/actions/learn-github-actions/variables](https://docs.github.com/en/actions/learn-github-actions/variables)
+- 🤖 **Automatic Token Authentication (GITHUB_TOKEN)** — [docs.github.com/en/actions/security-guides/automatic-token-authentication](https://docs.github.com/en/actions/security-guides/automatic-token-authentication)
+- 🏗️ **Using Environments for Deployment** — [docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
+- 🔑 **About Security Hardening with OpenID Connect (OIDC)** — [docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect](https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect)
+- 🖥️ **GitHub CLI: `gh secret`** — [cli.github.com/manual/gh_secret](https://cli.github.com/manual/gh_secret)
+- 🌐 **GitHub REST API — Repository Secrets** — [docs.github.com/en/rest/actions/secrets](https://docs.github.com/en/rest/actions/secrets)
+- 🔒 **Security Hardening for GitHub Actions** — [docs.github.com/en/actions/security-guides/security-hardening-for-github-actions](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions)
+
+---
+
 *Next: [Module 07 — Dependent Jobs & Artifacts](../module-07-dependent-jobs/README.md)*

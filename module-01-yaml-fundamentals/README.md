@@ -541,9 +541,11 @@ Study these before doing the exercises:
 
 ## References
 
-- **YAML specification** — search "YAML 1.2 specification yaml.org"
-- **Learn YAML in Y minutes** — search "Learn YAML in Y minutes"
-- **GitHub Actions workflow syntax** — search "Workflow syntax for GitHub Actions" on docs.github.com
+- 📄 **YAML 1.2 Specification** — [yaml.org/spec/1.2.2](https://yaml.org/spec/1.2.2/)
+- 📘 **Learn YAML in Y Minutes** — [learnxinyminutes.com/docs/yaml](https://learnxinyminutes.com/docs/yaml/)
+- ⚙️ **GitHub Actions Workflow Syntax** — [docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions](https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions)
+- 🔧 **yamllint** (CLI linter) — [yamllint.readthedocs.io](https://yamllint.readthedocs.io/en/stable/)
+- 🛠️ **YAML Extension for VS Code** (Red Hat) — [marketplace.visualstudio.com](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
 
 ---
 

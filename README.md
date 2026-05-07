@@ -133,11 +133,14 @@ cat module-01-yaml-fundamentals/README.md
 
 ## Official References
 
-- **GitHub Actions Documentation** — Search "GitHub Actions documentation" on docs.github.com
-- **GitHub Actions Marketplace** — marketplace.github.com/actions
-- **GitHub Learning Lab** — Search "GitHub Learning Lab GitHub Actions"
-- **`act` local runner** — Search "nektos/act GitHub"
-- **YAML Specification** — yaml.org
+- ⚡ **GitHub Actions Documentation** — [docs.github.com/en/actions](https://docs.github.com/en/actions)
+- 🛒 **GitHub Actions Marketplace** — [github.com/marketplace?type=actions](https://github.com/marketplace?type=actions)
+- 🎓 **GitHub Skills** (Learning Lab successor) — [skills.github.com](https://skills.github.com)
+- 🏃 **`act` Local Runner** (nektos/act) — [github.com/nektos/act](https://github.com/nektos/act)
+- 📄 **YAML 1.2 Specification** — [yaml.org/spec/1.2.2](https://yaml.org/spec/1.2.2/)
+- 🐍 **Python 3 Documentation** — [docs.python.org/3](https://docs.python.org/3/)
+- 🖥️ **GitHub CLI Manual** — [cli.github.com/manual](https://cli.github.com/manual/)
+- 📖 **Git Reference Manual** — [git-scm.com/doc](https://git-scm.com/doc)
 
 ---
 

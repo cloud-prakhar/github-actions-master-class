@@ -922,6 +922,20 @@ In **Module 10**, we'll explore advanced GitHub Actions patterns: reusable workf
 
 ---
 
+## References
+
+- 🏗️ **Using Environments for Deployment** — [docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
+- 🔑 **About Security Hardening with OpenID Connect (OIDC)** — [docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect](https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect)
+- ☁️ **Configuring OIDC in Amazon Web Services** — [docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services](https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services)
+- 🔔 **Slack GitHub Action** — [github.com/slackapi/slack-github-action](https://github.com/slackapi/slack-github-action)
+- 🤖 **actions/github-script** (Deployments API) — [github.com/actions/github-script](https://github.com/actions/github-script)
+- 🌐 **GitHub REST API — Deployments** — [docs.github.com/en/rest/deployments](https://docs.github.com/en/rest/deployments/deployments)
+- 🐳 **Docker Documentation** — [docs.docker.com](https://docs.docker.com/)
+- 🔐 **GitHub Container Registry (GHCR)** — [docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
+- 🏃 **Rollback Deployment Strategies** — [docs.github.com/en/actions/deployment/deploying-to-your-cloud-provider](https://docs.github.com/en/actions/deployment/deploying-to-your-cloud-provider)
+
+---
+
 *Module 09 of the GitHub Actions Master Class*
 *Previous: [Module 08: Continuous Integration (CI)](../module-08-ci-pipeline/README.md)*
 *Next: Module 10: Advanced Patterns*

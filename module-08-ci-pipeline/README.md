@@ -1055,5 +1055,21 @@ In **Module 09**, we'll take the artifacts produced by this CI pipeline and buil
 
 ---
 
+## References
+
+- ⚡ **About Continuous Integration** — [docs.github.com/en/actions/automating-builds-and-tests/about-continuous-integration](https://docs.github.com/en/actions/automating-builds-and-tests/about-continuous-integration)
+- 💾 **Caching Dependencies to Speed Up Workflows** — [docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows](https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows)
+- 💾 **actions/cache** — [github.com/actions/cache](https://github.com/actions/cache)
+- 🐍 **actions/setup-python** — [github.com/actions/setup-python](https://github.com/actions/setup-python)
+- 🧪 **pytest Documentation** — [docs.pytest.org](https://docs.pytest.org/en/latest/)
+- 📊 **pytest-cov** (Coverage Plugin) — [pytest-cov.readthedocs.io](https://pytest-cov.readthedocs.io/en/latest/)
+- 📐 **Flake8** (Python Linter) — [flake8.pycqa.org](https://flake8.pycqa.org/en/latest/)
+- 🔍 **pip-audit** (Dependency Vulnerability Scanner) — [pypi.org/project/pip-audit](https://pypi.org/project/pip-audit/)
+- 📈 **Codecov** (Coverage Reporting Service) — [about.codecov.io](https://about.codecov.io/)
+- 🌐 **Flask** (Python Web Framework) — [flask.palletsprojects.com](https://flask.palletsprojects.com/)
+- 🔒 **Branch Protection Rules** — [docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
+
+---
+
 *Module 08 of the GitHub Actions Master Class*
 *Next: [Module 09: Continuous Deployment (CD)](../module-09-cd-pipeline/README.md)*

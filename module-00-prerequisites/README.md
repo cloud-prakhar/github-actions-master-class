@@ -78,6 +78,18 @@ Your Repository
 
 ---
 
+## Official References
+
+- ⚡ **GitHub Actions Documentation** — [docs.github.com/en/actions](https://docs.github.com/en/actions)
+- 📖 **Git Documentation** — [git-scm.com/doc](https://git-scm.com/doc)
+- 🖥️ **GitHub CLI Manual** — [cli.github.com/manual](https://cli.github.com/manual/)
+- 💻 **VS Code Download** — [code.visualstudio.com](https://code.visualstudio.com)
+- 🔧 **YAML Extension for VS Code** (Red Hat) — [marketplace.visualstudio.com](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
+- 🏃 **`act` Local Runner** (nektos/act) — [github.com/nektos/act](https://github.com/nektos/act)
+- 🔑 **GitHub SSH Authentication** — [docs.github.com/en/authentication](https://docs.github.com/en/authentication/connecting-to-github-with-ssh)
+
+---
+
 ## Next Steps
 
 Complete the environment setup in [docs/getting-started.md](../docs/getting-started.md), then continue to:

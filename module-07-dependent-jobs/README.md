@@ -256,9 +256,11 @@ notify:
 
 ## References
 
-- **Job dependencies** — search "Jobs needs GitHub Actions"
-- **Artifacts** — search "Storing workflow data as artifacts GitHub Actions"
-- **Job outputs** — search "Defining outputs for jobs GitHub Actions"
+- 🔗 **Using Jobs in a Workflow** (`needs:`) — [docs.github.com/en/actions/using-jobs/using-jobs-in-a-workflow](https://docs.github.com/en/actions/using-jobs/using-jobs-in-a-workflow)
+- 📦 **Storing Workflow Data as Artifacts** — [docs.github.com/en/actions/using-workflows/storing-workflow-data-as-artifacts](https://docs.github.com/en/actions/using-workflows/storing-workflow-data-as-artifacts)
+- 📤 **actions/upload-artifact** — [github.com/actions/upload-artifact](https://github.com/actions/upload-artifact)
+- 📥 **actions/download-artifact** — [github.com/actions/download-artifact](https://github.com/actions/download-artifact)
+- 📋 **Defining Outputs for Jobs** — [docs.github.com/en/actions/using-jobs/defining-outputs-for-jobs](https://docs.github.com/en/actions/using-jobs/defining-outputs-for-jobs)
 
 ---
 

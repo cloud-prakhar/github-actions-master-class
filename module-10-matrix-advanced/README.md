@@ -925,12 +925,15 @@ Create a matrix workflow across Ubuntu and Windows where:
 
 ## Resources
 
-- [GitHub Docs: Using a matrix for your jobs](https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs)
-- [GitHub Docs: Using concurrency](https://docs.github.com/en/actions/using-jobs/using-concurrency)
-- [GitHub Docs: Running jobs in a container](https://docs.github.com/en/actions/using-jobs/running-jobs-in-a-container)
-- [GitHub Docs: About service containers](https://docs.github.com/en/actions/using-containerized-services/about-service-containers)
-- [GitHub Docs: Workflow commands](https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions)
-- [GitHub Docs: Adding a job summary](https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#adding-a-job-summary)
+- 🔢 **Using a Matrix for Your Jobs** — [docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs](https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs)
+- 🔄 **Using Concurrency** — [docs.github.com/en/actions/using-jobs/using-concurrency](https://docs.github.com/en/actions/using-jobs/using-concurrency)
+- 🐳 **Running Jobs in a Container** — [docs.github.com/en/actions/using-jobs/running-jobs-in-a-container](https://docs.github.com/en/actions/using-jobs/running-jobs-in-a-container)
+- 🛢️ **About Service Containers** — [docs.github.com/en/actions/using-containerized-services/about-service-containers](https://docs.github.com/en/actions/using-containerized-services/about-service-containers)
+- 🔧 **Workflow Commands for GitHub Actions** — [docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions](https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions)
+- 📊 **Adding a Job Summary** — [docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#adding-a-job-summary](https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#adding-a-job-summary)
+- 🐘 **PostgreSQL Docker Image** — [hub.docker.com/_/postgres](https://hub.docker.com/_/postgres)
+- 📦 **Redis Docker Image** — [hub.docker.com/_/redis](https://hub.docker.com/_/redis)
+- 🐳 **Docker Documentation** — [docs.docker.com](https://docs.docker.com/)
 
 ---
 
