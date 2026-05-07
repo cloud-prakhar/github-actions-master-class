@@ -1,0 +1,134 @@
+# =============================================================================
+# Pull Request Triggers — Module 04
+#
+# Demonstrates pull_request event configuration:
+#   - Activity types (opened, synchronize, reopened, etc.)
+#   - Branch filters (only PRs targeting specific branches)
+#   - Accessing PR-specific context data
+# =============================================================================
+
+name: Pull Request Trigger Demo
+
+on:
+  pull_request:
+    # ─── BRANCH FILTER ────────────────────────────────────────────────────────
+    # Only trigger for PRs that TARGET these branches (the base branch).
+    # This is NOT the source branch — it's the branch you're merging INTO.
+    branches:
+      - main          # PRs merging into main
+      - develop       # PRs merging into develop
+
+    # ─── ACTIVITY TYPES ───────────────────────────────────────────────────────
+    # By default (if you omit "types"), GitHub triggers on:
+    #   opened, synchronize, reopened
+    #
+    # Here we explicitly list the ones we care about.
+    # Uncomment or add types as needed for your use case.
+    types:
+      - opened        # PR was just created — run full CI
+      - synchronize   # New commits pushed to the PR branch — re-run CI
+      - reopened      # Closed PR was re-opened — re-run CI
+      # - closed        # PR was closed (merged or abandoned) — useful for cleanup
+      # - labeled       # A label was added — useful for release automation
+      # - ready_for_review  # Draft PR converted to ready — trigger full CI
+
+# Cancel older runs for the same PR when new commits arrive.
+# This is the classic use case for concurrency: why test old code
+# when the developer just pushed a fix?
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-info:
+    name: PR Information
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          # For PRs, checkout the merge commit (the result of merging PR into base)
+          # This is the default behavior and tests what would actually be merged.
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # The "github.event" context contains the full GitHub webhook payload.
+      # For pull_request events, github.event.pull_request has all PR details.
+      - name: Print pull request information
+        run: |
+          echo "════════════════════════════════════════════════════"
+          echo "  PULL REQUEST EVENT DETAILS"
+          echo "════════════════════════════════════════════════════"
+          echo ""
+          echo "  PR Number:        #${{ github.event.pull_request.number }}"
+          echo "  PR Title:         ${{ github.event.pull_request.title }}"
+          echo "  PR State:         ${{ github.event.pull_request.state }}"
+          echo "  Activity type:    ${{ github.event.action }}"
+          echo ""
+          echo "  Source branch:    ${{ github.event.pull_request.head.ref }}"
+          echo "  Target branch:    ${{ github.event.pull_request.base.ref }}"
+          echo "  Source repo:      ${{ github.event.pull_request.head.repo.full_name }}"
+          echo ""
+          echo "  Opened by:        ${{ github.event.pull_request.user.login }}"
+          echo "  Draft:            ${{ github.event.pull_request.draft }}"
+          echo "  Mergeable:        ${{ github.event.pull_request.mergeable }}"
+          echo ""
+          echo "  Changed files:    ${{ github.event.pull_request.changed_files }}"
+          echo "  Commits in PR:    ${{ github.event.pull_request.commits }}"
+          echo "  Additions:        ${{ github.event.pull_request.additions }}"
+          echo "  Deletions:        ${{ github.event.pull_request.deletions }}"
+          echo ""
+
+      # Show different behavior based on what triggered this PR run.
+      # github.event.action tells us the specific activity type.
+      - name: Activity-specific logic
+        run: |
+          ACTION="${{ github.event.action }}"
+          echo "This run was triggered by PR action: $ACTION"
+          echo ""
+          case "$ACTION" in
+            opened)
+              echo "PR just opened — running full CI suite"
+              ;;
+            synchronize)
+              echo "New commits pushed — re-running CI on updated code"
+              ;;
+            reopened)
+              echo "PR reopened — re-running CI"
+              ;;
+            labeled)
+              echo "Label added: ${{ github.event.label.name }}"
+              ;;
+            *)
+              echo "Other action: $ACTION"
+              ;;
+          esac
+
+      # Show the fork detection pattern.
+      # PRs from forks have DIFFERENT head.repo.full_name from the base repo.
+      # This matters because fork PRs cannot access your secrets for security reasons.
+      - name: Detect fork PR
+        run: |
+          BASE_REPO="${{ github.event.pull_request.base.repo.full_name }}"
+          HEAD_REPO="${{ github.event.pull_request.head.repo.full_name }}"
+
+          if [ "$BASE_REPO" == "$HEAD_REPO" ]; then
+            echo "This PR is from the same repository (not a fork)"
+            echo "Secrets are available in this run"
+          else
+            echo "This PR is from a FORK: $HEAD_REPO"
+            echo "For security, secrets are NOT available in fork PRs"
+            echo "Use pull_request_target event if you need secrets for fork PRs"
+          fi
+
+      - name: Simulate PR checks
+        run: |
+          echo "Running checks for PR #${{ github.event.pull_request.number }}"
+          echo "  Target: ${{ github.event.pull_request.base.ref }}"
+          echo "  Source: ${{ github.event.pull_request.head.ref }}"
+          echo ""
+          echo "  [✓] Code style check"
+          echo "  [✓] Unit tests"
+          echo "  [✓] Security scan"
+          echo ""
+          echo "All checks complete — PR is ready for review!"

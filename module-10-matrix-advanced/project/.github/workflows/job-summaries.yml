@@ -1,0 +1,508 @@
+# ============================================================
+# WORKFLOW: Job Summaries & Workflow Commands
+# ============================================================
+#
+# PURPOSE:
+#   Demonstrates the full set of GitHub Actions workflow commands
+#   and the GITHUB_STEP_SUMMARY feature for rich reporting.
+#
+# KEY CONCEPTS DEMONSTRATED:
+#   1. GITHUB_STEP_SUMMARY — write Markdown reports to the UI
+#   2. ::notice:: — informational annotation
+#   3. ::warning:: — warning annotation (with file/line)
+#   4. ::error:: — error annotation (with file/line)
+#   5. ::add-mask:: — redact sensitive values from logs
+#   6. ::group:: / ::endgroup:: — collapsible log sections
+#   7. ::debug:: — debug-only log messages
+#   8. GITHUB_ENV — set environment variables for subsequent steps
+#   9. GITHUB_OUTPUT — set step outputs for subsequent steps/jobs
+#  10. GITHUB_PATH — add directories to PATH
+#
+# WORKFLOW COMMANDS REFERENCE:
+#   The old ::set-output:: command is DEPRECATED. Use GITHUB_OUTPUT.
+#   The old ::set-env:: command is DEPRECATED. Use GITHUB_ENV.
+#   Always use the file-based approach for outputs and env vars.
+
+name: Job Summaries & Workflow Commands
+
+on:
+  push:
+    branches:
+      - "**"
+
+jobs:
+
+  # ----------------------------------------------------------
+  # JOB: Demonstrate All Workflow Commands
+  # ----------------------------------------------------------
+  workflow-commands-demo:
+    name: "Workflow Commands Demo"
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ======================================================
+      # SECTION 1: Log Grouping with ::group:: / ::endgroup::
+      # ======================================================
+      # Groups create collapsible sections in the GitHub Actions
+      # log viewer. Click the triangle to expand/collapse.
+      # This is purely cosmetic — helps with readability of long logs.
+      - name: "Demo: Log grouping"
+        run: |
+          echo "This line is outside any group (always visible)"
+          echo ""
+
+          # Open a collapsible group
+          echo "::group::Dependency Installation Details"
+          echo "Fetching package manifest..."
+          echo "Resolving dependency tree..."
+          echo "Installing 42 packages..."
+          echo "  + express@4.18.2"
+          echo "  + lodash@4.17.21"
+          echo "  + jest@29.7.0"
+          echo "  ... (39 more)"
+          echo "All dependencies installed successfully"
+          # Close the group
+          echo "::endgroup::"
+
+          echo ""
+          echo "::group::Build Output"
+          echo "Compiling TypeScript..."
+          echo "  src/index.ts → dist/index.js"
+          echo "  src/utils.ts → dist/utils.js"
+          echo "  src/api/*.ts → dist/api/*.js"
+          echo "Compilation complete: 0 errors, 2 warnings"
+          echo "::endgroup::"
+
+          echo ""
+          echo "Groups above are collapsed by default in the UI."
+          echo "Click them to expand."
+
+      # ======================================================
+      # SECTION 2: Annotations — ::notice::, ::warning::, ::error::
+      # ======================================================
+      # Annotations appear in:
+      #   1. The workflow run summary page
+      #   2. The pull request "Files Changed" diff view (with file/line)
+      #
+      # FORMATS:
+      #   ::notice::message
+      #   ::warning::message
+      #   ::error::message
+      #   ::notice file=path,line=N,endLine=N,col=N,title=Title::message
+      - name: "Demo: Annotations (notice, warning, error)"
+        run: |
+          echo "Emitting various annotation types..."
+          echo ""
+
+          # NOTICE: Informational. Shows as blue/info in the UI.
+          echo "::notice::Build completed successfully for branch ${{ github.ref_name }}"
+
+          # NOTICE with file reference: links to specific file in PR diff
+          echo "::notice file=src/index.js,line=1,title=Info::Application entry point"
+
+          # WARNING: Shows as yellow in the UI. Does NOT fail the step.
+          echo "::warning::Node.js 18 reaches end-of-life in April 2025"
+
+          # WARNING linked to a specific file and line
+          # In a real workflow, this would come from a linter or analyzer
+          echo "::warning file=src/app.js,line=23,col=5,title=Deprecation Warning::The 'express.bodyParser' middleware is deprecated. Use 'express.json()' instead."
+
+          # WARNING with line range
+          echo "::warning file=src/utils.js,line=45,endLine=52,title=Complex Function::This function has high cyclomatic complexity (12). Consider refactoring."
+
+          # ERROR: Shows as red. Does NOT automatically fail the step.
+          # To fail the job, you must still exit with a non-zero code.
+          echo "::error::This is an example error annotation (step continues unless we 'exit 1')"
+
+          # ERROR linked to a test failure location
+          echo "::error file=tests/api.test.js,line=67,title=Test Failed::Expected status 200, received 404"
+
+          echo ""
+          echo "Annotations will appear in the workflow summary and"
+          echo "in pull request file diffs (when file paths are specified)."
+
+      # ======================================================
+      # SECTION 3: Debug Messages
+      # ======================================================
+      # ::debug:: messages ONLY appear in logs when the secret
+      # ACTIONS_STEP_DEBUG is set to 'true' in the repository.
+      # They are completely hidden during normal runs.
+      # Use for verbose diagnostic information you only need during debugging.
+      - name: "Demo: Debug messages"
+        run: |
+          echo "::debug::This message only appears when ACTIONS_STEP_DEBUG=true"
+          echo "::debug::Database connection string: postgresql://localhost:5432/mydb"
+          echo "::debug::Full environment dump would go here"
+          echo ""
+          echo "The debug lines above are hidden in normal runs."
+          echo "Enable debug logging by setting the ACTIONS_STEP_DEBUG secret to 'true'."
+
+      # ======================================================
+      # SECTION 4: Masking Sensitive Values
+      # ======================================================
+      # ::add-mask:: tells GitHub Actions to replace any occurrence
+      # of the given value with '***' in all subsequent log output.
+      #
+      # IMPORTANT RULES:
+      #   - Only masks FUTURE log output (not retroactive)
+      #   - Masks values in the CURRENT job and all subsequent steps
+      #   - Does not mask values in OTHER jobs
+      #   - Case-sensitive
+      #   - Use for dynamically generated tokens, not just secrets
+      #     (secrets are auto-masked, but dynamic values are not)
+      - name: "Demo: Masking sensitive values"
+        run: |
+          # Simulate generating a dynamic token (e.g., from an API call)
+          DYNAMIC_TOKEN="ghp_$(date +%s)_example_token_abc123"
+          API_KEY="api-key-8f2c4a9b-1234-5678-abcd-ef0123456789"
+
+          echo "Before masking:"
+          echo "  DYNAMIC_TOKEN = $DYNAMIC_TOKEN"
+          echo "  API_KEY = $API_KEY"
+          echo ""
+
+          # Mask the values — any future reference will show ***
+          echo "::add-mask::$DYNAMIC_TOKEN"
+          echo "::add-mask::$API_KEY"
+
+          echo "After masking:"
+          echo "  DYNAMIC_TOKEN = $DYNAMIC_TOKEN"  # Will show ***
+          echo "  API_KEY = $API_KEY"               # Will show ***
+          echo ""
+
+          echo "Even in interpolated strings:"
+          echo "  Authorization: Bearer $DYNAMIC_TOKEN"  # *** appears here too
+          echo "  X-API-Key: $API_KEY"                   # *** appears here too
+
+          echo ""
+          echo "Masking is effective for the rest of this job."
+
+      # ======================================================
+      # SECTION 5: Setting Environment Variables (GITHUB_ENV)
+      # ======================================================
+      # GITHUB_ENV is a file. Write "KEY=VALUE" lines to it.
+      # Those variables become available to ALL subsequent steps.
+      # The format: echo "KEY=VALUE" >> $GITHUB_ENV
+      #
+      # For multi-line values, use the heredoc delimiter syntax:
+      # echo "KEY<<EOF" >> $GITHUB_ENV
+      # echo "line1" >> $GITHUB_ENV
+      # echo "line2" >> $GITHUB_ENV
+      # echo "EOF" >> $GITHUB_ENV
+      - name: "Demo: Setting environment variables (GITHUB_ENV)"
+        run: |
+          # Simple key=value
+          echo "APP_VERSION=1.2.3" >> $GITHUB_ENV
+          echo "BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+          echo "GIT_SHORT_SHA=$(echo '${{ github.sha }}' | cut -c1-7)" >> $GITHUB_ENV
+
+          # Boolean-like value
+          echo "FEATURE_FLAG_ENABLED=true" >> $GITHUB_ENV
+
+          echo "Environment variables set. They will be available in subsequent steps."
+
+      - name: "Demo: Using environment variables from previous step"
+        run: |
+          # These variables were set in the previous step via GITHUB_ENV
+          echo "APP_VERSION      = $APP_VERSION"
+          echo "BUILD_TIMESTAMP  = $BUILD_TIMESTAMP"
+          echo "GIT_SHORT_SHA    = $GIT_SHORT_SHA"
+          echo "FEATURE_FLAG     = $FEATURE_FLAG_ENABLED"
+          echo ""
+          echo "Note: Variables set via GITHUB_ENV persist for the rest"
+          echo "of this job only. They do NOT carry over to other jobs."
+
+      # ======================================================
+      # SECTION 6: Setting Step Outputs (GITHUB_OUTPUT)
+      # ======================================================
+      # Step outputs let you pass data between steps in the same job
+      # (and to subsequent jobs via the outputs: keyword on the job).
+      #
+      # Write "key=value" to $GITHUB_OUTPUT file.
+      # Access with: ${{ steps.<step-id>.outputs.<key> }}
+      #
+      # DEPRECATED (do not use): echo "::set-output name=key::value"
+      - name: "Demo: Setting step outputs (GITHUB_OUTPUT)"
+        id: build-info   # Step ID is required to reference outputs
+        run: |
+          # Generate some values to output
+          VERSION="2.0.$(date +%j)"  # Version based on day of year
+          BUILD_NUMBER="${{ github.run_number }}"
+          ARTIFACT_NAME="app-v${VERSION}-build${BUILD_NUMBER}"
+
+          # Write outputs using GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build-number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+          echo "deploy-ready=true" >> $GITHUB_OUTPUT
+
+          echo "Outputs written:"
+          echo "  version       = $VERSION"
+          echo "  build-number  = $BUILD_NUMBER"
+          echo "  artifact-name = $ARTIFACT_NAME"
+          echo "  deploy-ready  = true"
+
+      - name: "Demo: Using outputs from previous step"
+        run: |
+          # Reference previous step's outputs using the step ID
+          echo "== Accessing step outputs =="
+          echo ""
+          echo "Version       : ${{ steps.build-info.outputs.version }}"
+          echo "Build Number  : ${{ steps.build-info.outputs.build-number }}"
+          echo "Artifact Name : ${{ steps.build-info.outputs.artifact-name }}"
+          echo "Deploy Ready  : ${{ steps.build-info.outputs.deploy-ready }}"
+
+      # ======================================================
+      # SECTION 7: Modifying PATH (GITHUB_PATH)
+      # ======================================================
+      # GITHUB_PATH is a file. Write directory paths to it (one per line).
+      # Each path is prepended to PATH for ALL subsequent steps.
+      # This is the modern replacement for the old ::add-path:: command.
+      - name: "Demo: Adding to PATH (GITHUB_PATH)"
+        run: |
+          # Create a fake "tool" directory to demonstrate the concept
+          mkdir -p /tmp/my-custom-tools/bin
+
+          # Create a fake binary
+          cat > /tmp/my-custom-tools/bin/my-tool << 'SCRIPT'
+          #!/bin/bash
+          echo "my-tool v1.0.0 — Custom tool for GitHub Actions demo"
+          echo "Arguments received: $@"
+          SCRIPT
+          chmod +x /tmp/my-custom-tools/bin/my-tool
+
+          echo "Custom tools directory created at: /tmp/my-custom-tools/bin"
+          echo ""
+
+          # Add the directory to PATH for subsequent steps
+          echo "/tmp/my-custom-tools/bin" >> $GITHUB_PATH
+
+          echo "Added /tmp/my-custom-tools/bin to GITHUB_PATH"
+          echo ""
+          echo "NOTE: The PATH update takes effect in the NEXT step,"
+          echo "not in this step. This is by design."
+          echo ""
+          echo "Current PATH (before update takes effect):"
+          echo "$PATH" | tr ':' '\n' | head -5
+          echo "  ..."
+
+      - name: "Demo: Using tool added to PATH"
+        run: |
+          echo "PATH now includes /tmp/my-custom-tools/bin"
+          echo ""
+          # This works because we added the directory in the previous step
+          my-tool --help
+          my-tool build release
+
+          echo ""
+          echo "Tool found in PATH: $(which my-tool)"
+
+      # ======================================================
+      # SECTION 8: Comprehensive Job Summary
+      # ======================================================
+      # The final step writes a detailed Markdown summary that
+      # appears in the GitHub Actions Summary tab.
+      #
+      # Supported Markdown features:
+      #   - Headers (# through ######)
+      #   - Tables
+      #   - Code blocks (``` fenced)
+      #   - Bold, italic
+      #   - Lists (ordered and unordered)
+      #   - Blockquotes
+      #   - Task lists (- [x] item)
+      #   - Emoji shortcodes (:rocket:, :white_check_mark:, etc.)
+      #   - Links
+      - name: "Write comprehensive job summary"
+        if: always()  # Run even if previous steps failed
+        run: |
+          # Write the summary to GITHUB_STEP_SUMMARY
+          # Using >> (append) so each step can add to the same summary
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # Workflow Commands & Job Summary Demo
+
+          > This summary was generated by the `job-summaries.yml` workflow.
+          > It demonstrates writing rich Markdown content to the GitHub Actions UI.
+
+          ---
+
+          ## Run Information
+
+          | Property | Value |
+          |----------|-------|
+          | **Workflow** | Job Summaries & Workflow Commands |
+          | **Run Number** | #${{ github.run_number }} |
+          | **Branch** | `${{ github.ref_name }}` |
+          | **Triggered By** | `${{ github.actor }}` |
+          | **Commit** | `${{ github.sha }}` |
+
+          ---
+
+          ## Workflow Commands Demonstrated
+
+          ### Annotations
+
+          | Command | Purpose | Appears In |
+          |---------|---------|------------|
+          | `::notice::` | Informational message | Summary, PR diff |
+          | `::warning::` | Warning (non-failing) | Summary, PR diff |
+          | `::error::` | Error message | Summary, PR diff |
+          | `::debug::` | Debug (hidden normally) | Log (debug mode only) |
+
+          **File-linked annotation format:**
+          ```
+          ::warning file=path/to/file.js,line=42,title=Issue Title::Message here
+          ```
+
+          ### Log Organization
+
+          | Command | Purpose |
+          |---------|---------|
+          | `::group::name` | Start collapsible log section |
+          | `::endgroup::` | End collapsible log section |
+
+          ### Sensitive Data
+
+          | Command | Purpose |
+          |---------|---------|
+          | `::add-mask::value` | Replace `value` with `***` in all logs |
+
+          ### Variable Communication (Modern Approach)
+
+          | Mechanism | Purpose | Usage |
+          |-----------|---------|-------|
+          | `GITHUB_ENV` | Set env vars for later steps | `echo "KEY=val" >> $GITHUB_ENV` |
+          | `GITHUB_OUTPUT` | Set step outputs | `echo "key=val" >> $GITHUB_OUTPUT` |
+          | `GITHUB_PATH` | Add to PATH | `echo "/path/to/bin" >> $GITHUB_PATH` |
+          | `GITHUB_STEP_SUMMARY` | Write job summary | `echo "# MD" >> $GITHUB_STEP_SUMMARY` |
+
+          ---
+
+          ## Step Results
+
+          - [x] Log grouping demonstrated
+          - [x] Notice annotation emitted
+          - [x] Warning annotation emitted (with file reference)
+          - [x] Error annotation emitted
+          - [x] Debug messages used (hidden in normal runs)
+          - [x] Sensitive values masked with `::add-mask::`
+          - [x] Environment variables set via `GITHUB_ENV`
+          - [x] Step outputs set via `GITHUB_OUTPUT`
+          - [x] PATH extended via `GITHUB_PATH`
+          - [x] This summary written via `GITHUB_STEP_SUMMARY`
+
+          ---
+
+          ## Build Outputs
+
+          | Output | Value |
+          |--------|-------|
+          | **App Version** | $APP_VERSION |
+          | **Build Timestamp** | $BUILD_TIMESTAMP |
+          | **Commit Short SHA** | $GIT_SHORT_SHA |
+
+          ---
+
+          ## Code Example: Setting Outputs
+
+          ```yaml
+          - name: Set outputs
+            id: my-step
+            run: |
+              echo "version=1.0.0" >> $GITHUB_OUTPUT
+
+          - name: Use outputs
+            run: echo "${{ "{{" }} steps.my-step.outputs.version }}"
+          ```
+
+          ---
+
+          :rocket: **All workflow commands demonstrated successfully!**
+          EOF
+
+          echo ""
+          echo "Job summary written. View it in the Summary tab of this workflow run."
+
+  # ----------------------------------------------------------
+  # JOB: Demonstrate Job-Level Outputs
+  # ----------------------------------------------------------
+  # Shows how outputs propagate from a job to another job
+  producer:
+    name: "Producer Job (sets outputs)"
+    runs-on: ubuntu-latest
+    outputs:
+      # Declare job-level outputs — these come from step outputs
+      release-version: ${{ steps.version.outputs.version }}
+      release-url: ${{ steps.version.outputs.url }}
+
+    steps:
+      - name: "Generate release info"
+        id: version
+        run: |
+          VERSION="v1.${{ github.run_number }}.0"
+          URL="https://github.com/${{ github.repository }}/releases/tag/$VERSION"
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+          echo "Generated version: $VERSION"
+          echo "Release URL: $URL"
+
+      - name: "Write producer summary"
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## Producer Job
+
+          Set the following job outputs:
+          - \`release-version\`: ${{ steps.version.outputs.version }}
+          - \`release-url\`: ${{ steps.version.outputs.url }}
+
+          These are available to consumer jobs via \`needs.producer.outputs.*\`
+          EOF
+
+  # ----------------------------------------------------------
+  # JOB: Consumer (reads outputs from producer)
+  # ----------------------------------------------------------
+  consumer:
+    name: "Consumer Job (reads outputs)"
+    runs-on: ubuntu-latest
+    needs: producer  # Must declare dependency to access outputs
+
+    steps:
+      - name: "Use producer job outputs"
+        run: |
+          echo "== Consuming outputs from producer job =="
+          echo ""
+          echo "Release Version : ${{ needs.producer.outputs.release-version }}"
+          echo "Release URL     : ${{ needs.producer.outputs.release-url }}"
+          echo ""
+          echo "This demonstrates output passing between jobs."
+          echo "The 'needs' context gives access to outputs from"
+          echo "jobs listed in the 'needs:' keyword."
+
+      - name: "Write consumer summary"
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## Consumer Job
+
+          ### Outputs Received from Producer
+
+          | Output Key | Value |
+          |------------|-------|
+          | `release-version` | ${{ needs.producer.outputs.release-version }} |
+          | `release-url` | [Link](${{ needs.producer.outputs.release-url }}) |
+
+          ### How to Access Job Outputs
+
+          ```yaml
+          jobs:
+            consumer:
+              needs: producer
+              steps:
+                - run: echo "${{ "{{" }} needs.producer.outputs.release-version }}"
+          ```
+
+          Job outputs are declared at the job level using `outputs:` and
+          populated from step outputs using `${{ "{{" }} steps.<id>.outputs.<key> }}`.
+          EOF

@@ -1,0 +1,150 @@
+# =============================================================================
+# Hello World Workflow — Module 03, Project 1
+#
+# PURPOSE: Your very first GitHub Actions workflow.
+# This workflow teaches the absolute basics:
+#   - What a workflow file looks like
+#   - How triggers work (on: push + pull_request)
+#   - What a job is (greet)
+#   - What steps are (each - name: block)
+#   - How to run shell commands (run:)
+#   - How to use pre-built actions (uses:)
+#   - How to access GitHub context variables (${{ github.actor }} etc.)
+#
+# HOW TO USE:
+#   1. Copy this file to .github/workflows/hello-world.yml in your repo
+#   2. Commit and push to GitHub
+#   3. Go to the Actions tab in your repo to see it run
+# =============================================================================
+
+# ─── WORKFLOW NAME ────────────────────────────────────────────────────────────
+# This name appears in the GitHub Actions UI under the "Actions" tab.
+# It helps you identify this workflow among many others.
+name: Hello World Workflow
+
+# ─── TRIGGERS ─────────────────────────────────────────────────────────────────
+# The "on:" key defines WHEN this workflow runs.
+# This workflow runs on two events:
+#   1. push — whenever code is pushed to the main branch
+#   2. pull_request — whenever a PR is opened or updated targeting main
+on:
+  push:
+    branches:
+      - main          # Only trigger on pushes to "main", not other branches
+  pull_request:
+    branches:
+      - main          # Only trigger on PRs targeting "main"
+
+# ─── JOBS ─────────────────────────────────────────────────────────────────────
+# A workflow contains one or more jobs.
+# By default, all jobs run in PARALLEL (at the same time).
+# This workflow has one job called "greet".
+jobs:
+
+  # ─── JOB: greet ─────────────────────────────────────────────────────────────
+  # "greet" is the JOB ID — it must be unique within this workflow.
+  # Job IDs are used internally and can be referenced by other jobs.
+  greet:
+
+    # The runner: which type of virtual machine runs this job.
+    # "ubuntu-latest" = the latest Ubuntu Linux image GitHub provides.
+    # Other options: windows-latest, macos-latest
+    runs-on: ubuntu-latest
+
+    # ─── STEPS ────────────────────────────────────────────────────────────────
+    # Steps are the individual tasks within a job.
+    # Steps run SEQUENTIALLY (one at a time, in order).
+    # If a step fails, subsequent steps are skipped (by default).
+    steps:
+
+      # ─── STEP 1: Checkout the repository ──────────────────────────────────
+      # This is the FIRST step in almost every GitHub Actions workflow.
+      #
+      # WHY: The runner is a fresh, empty virtual machine. It has no knowledge
+      # of your repository. The "actions/checkout" action clones your repo
+      # onto the runner so subsequent steps can access your files.
+      #
+      # "uses:" means we're using a pre-built action from the Marketplace.
+      # "actions/checkout" is maintained by GitHub itself.
+      # "@v4" pins to version 4 — always specify a version, never use @main.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ─── STEP 2: Say Hello ────────────────────────────────────────────────
+      # "run:" executes a shell command on the runner.
+      # On ubuntu-latest, the default shell is bash.
+      - name: Say hello
+        run: echo "Hello, GitHub Actions! Welcome to the course."
+
+      # ─── STEP 3: Print current date and time ─────────────────────────────
+      # The "date" command is a standard Unix tool.
+      # This shows that you can run any shell command that the OS provides.
+      - name: Print date and time
+        run: |
+          echo "Current UTC time: $(date -u)"
+          echo "Runner timezone: $(date)"
+
+      # ─── STEP 4: Print GitHub Context Information ─────────────────────────
+      # GitHub Actions provides many built-in variables through "contexts".
+      # The "github" context contains information about the current run:
+      #   ${{ github.actor }}        — the username who triggered the workflow
+      #   ${{ github.event_name }}   — what event triggered it (push, etc.)
+      #   ${{ github.ref }}          — the full branch/tag ref
+      #   ${{ github.sha }}          — the full commit SHA hash
+      #   ${{ github.repository }}   — "owner/repo-name"
+      #   ${{ github.run_number }}   — sequential run number for this workflow
+      #   ${{ github.run_id }}       — globally unique run ID
+      #
+      # Expressions use ${{ }} syntax and are evaluated before the step runs.
+      - name: Print GitHub context info
+        run: |
+          echo "============================================"
+          echo "  GITHUB ACTIONS CONTEXT INFORMATION"
+          echo "============================================"
+          echo "  Who triggered this run: ${{ github.actor }}"
+          echo "  What triggered it:      ${{ github.event_name }}"
+          echo "  Branch / Ref:           ${{ github.ref }}"
+          echo "  Commit SHA:             ${{ github.sha }}"
+          echo "  Repository:             ${{ github.repository }}"
+          echo "  Run number:             ${{ github.run_number }}"
+          echo "  Run ID:                 ${{ github.run_id }}"
+          echo "============================================"
+
+      # ─── STEP 5: Print runner information ────────────────────────────────
+      # The "runner" context provides information about the virtual machine.
+      - name: Print runner info
+        run: |
+          echo "Runner OS:   ${{ runner.os }}"
+          echo "Runner arch: ${{ runner.arch }}"
+          echo "Runner temp: ${{ runner.temp }}"
+          echo ""
+          echo "System info:"
+          uname -a
+          echo ""
+          echo "Available disk space:"
+          df -h /
+
+      # ─── STEP 6: List files in the workspace ──────────────────────────────
+      # After actions/checkout, the runner has all your repository files
+      # in the $GITHUB_WORKSPACE directory (usually /home/runner/work/repo/).
+      # This step shows you what files are available.
+      - name: List workspace files
+        run: |
+          echo "Workspace path: $GITHUB_WORKSPACE"
+          echo ""
+          echo "Files in the workspace:"
+          ls -la $GITHUB_WORKSPACE
+
+      # ─── STEP 7: Final message ────────────────────────────────────────────
+      # A multi-line message using the literal block scalar (|).
+      # Everything after | is treated as a shell script, line by line.
+      - name: Congratulations message
+        run: |
+          echo ""
+          echo "╔════════════════════════════════════════╗"
+          echo "║  You just ran your first workflow!     ║"
+          echo "║  Welcome to GitHub Actions!            ║"
+          echo "║                                        ║"
+          echo "║  Next: Module 04 — Workflow Triggers   ║"
+          echo "╚════════════════════════════════════════╝"
+          echo ""

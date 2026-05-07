@@ -1,0 +1,127 @@
+# ============================================================
+# Exercise 01 SOLUTIONS: Fix the Broken YAML
+# ============================================================
+# Each section shows the original problem and the corrected YAML.
+# ============================================================
+
+# ─── SNIPPET 1 SOLUTION ──────────────────────────────────────────
+# PROBLEM: Missing space after the colon on every line.
+# RULE: key: value — there MUST be a space after the colon.
+
+# ORIGINAL (broken):
+# name:GitHub Actions Course
+# version:2.0
+# active:true
+
+# FIXED:
+name: GitHub Actions Course
+version: "2.0"             # also quoted — prevents 2.0 being read as float
+active: true
+
+# ─── SNIPPET 2 SOLUTION ──────────────────────────────────────────
+# PROBLEM: Tab characters used for indentation.
+# RULE: YAML only accepts spaces. Tabs cause a parse error.
+
+# ORIGINAL (broken — the indentation was tabs):
+# course:
+# [TAB]title: YAML Fundamentals
+# [TAB]level: beginner
+# [TAB]duration: 3
+
+# FIXED (2 spaces per level):
+course:
+  title: YAML Fundamentals
+  level: beginner
+  duration: 3
+
+# ─── SNIPPET 3 SOLUTION ──────────────────────────────────────────
+# PROBLEM: YAML automatically converts on/no/yes/null to bool/null.
+# RULE: Quote values that look like booleans or null if you want strings.
+
+# ORIGINAL (on → true, no → false, yes → true, null → null):
+# settings:
+#   notifications: on
+#   country: no
+#   feature_toggle: yes
+#   env_type: null
+
+# FIXED (all wrapped in quotes to stay as strings):
+settings:
+  notifications: "on"         # string "on", not boolean true
+  country: "no"               # string "no", not boolean false (Norway!)
+  feature_toggle: "yes"       # string "yes", not boolean true
+  env_type: "null"            # string "null", not YAML null
+
+# ─── SNIPPET 4 SOLUTION ──────────────────────────────────────────
+# PROBLEM: runs-on and steps are at the wrong indentation level.
+# They should be CHILDREN of "build", not siblings of "build".
+
+# ORIGINAL (broken):
+# jobs:
+#   build:
+#   runs-on: ubuntu-latest   ← at the same level as build, not inside it!
+#   steps:
+#     - name: Checkout
+
+# FIXED:
+jobs:
+  build:
+    runs-on: ubuntu-latest     # 4 spaces — child of "build"
+    steps:                     # 4 spaces — child of "build"
+      - name: Checkout         # 6 spaces — item in "steps" list
+        uses: actions/checkout@v4
+
+# ─── SNIPPET 5 SOLUTION ──────────────────────────────────────────
+# PROBLEM: Colons and backslashes in unquoted strings cause parse errors.
+# RULE: Quote strings that contain : { } [ ] , & * # ? | - < > = ! % @ ` \
+
+# ORIGINAL (broken):
+# message: Hello: World        ← colon makes YAML think "World" is a key
+# website: http://example.com  ← colon in URL
+# path: C:\Users\alice         ← backslash
+
+# FIXED:
+message: "Hello: World"
+website: "http://example.com"
+path: "C:\\Users\\alice"       # double backslash: first \ escapes the second
+
+# ─── SNIPPET 6 SOLUTION ──────────────────────────────────────────
+# PROBLEM: List items missing the "- " prefix. Also wrong inline syntax.
+
+# ORIGINAL (broken):
+# languages:
+#   Python          ← no "- " prefix, treated as a mapping key
+#   JavaScript
+#   Go
+#
+# ports: -80 -443 -8080   ← invalid list syntax
+
+# FIXED (block style):
+languages:
+  - Python
+  - JavaScript
+  - Go
+
+# FIXED (inline style — both are valid):
+ports: [80, 443, 8080]
+# Or block style:
+# ports:
+#   - 80
+#   - 443
+#   - 8080
+
+# ─── SNIPPET 7 SOLUTION ──────────────────────────────────────────
+# PROBLEM: Line 3 (port) used a TAB while lines 2 and 4 used SPACES.
+# RULE: Never mix tabs and spaces. Use spaces only.
+
+# ORIGINAL (port line had a tab):
+# config:
+#   host: localhost
+# [TAB]port: 5432
+#   database: mydb
+
+# FIXED (all 2-space indentation):
+config:
+  host: localhost
+  port: 5432
+  database: mydb

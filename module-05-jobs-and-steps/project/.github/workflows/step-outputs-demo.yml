@@ -1,0 +1,133 @@
+# =============================================================================
+# Step Outputs Demo — Module 05
+#
+# Demonstrates how steps communicate with each other via outputs.
+#
+# The mechanism:
+#   Write "key=value" to the $GITHUB_OUTPUT file in a step.
+#   Reference it in later steps as: ${{ steps.<id>.outputs.<key> }}
+#
+# Important rules:
+#   1. The step must have an "id:" key — otherwise you can't reference it
+#   2. Use >> (append) not > (overwrite) when writing to $GITHUB_OUTPUT
+#   3. Outputs are only available in the SAME job (not across jobs)
+#      For cross-job outputs, see Module 07: Job Outputs
+# =============================================================================
+
+name: Step Outputs Demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  outputs-demo:
+    name: Step Outputs Demonstration
+    runs-on: ubuntu-latest
+
+    steps:
+      # ─── STEP 1: Set a simple string output ──────────────────────────────
+      - name: Generate build timestamp
+        id: timestamp               # REQUIRED: id lets us reference this step
+        run: |
+          # $GITHUB_OUTPUT is a file path set by GitHub Actions.
+          # Writing "key=value" lines to it registers step outputs.
+          TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          echo "value=$TIMESTAMP" >> $GITHUB_OUTPUT
+          echo "Generated timestamp: $TIMESTAMP"
+
+      # ─── STEP 2: Use that output ─────────────────────────────────────────
+      - name: Use the timestamp
+        run: |
+          # Access the output: steps.<id>.outputs.<key>
+          echo "Timestamp from previous step: ${{ steps.timestamp.outputs.value }}"
+
+      # ─── STEP 3: Multiple outputs from one step ───────────────────────────
+      - name: Generate build metadata
+        id: metadata
+        run: |
+          # Write multiple outputs in one step
+          SHORT_SHA="${{ github.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"               # first 7 chars of SHA
+
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          echo "actor=${{ github.actor }}" >> $GITHUB_OUTPUT
+          echo "run_number=${{ github.run_number }}" >> $GITHUB_OUTPUT
+          echo "python_version=3.14" >> $GITHUB_OUTPUT
+
+          echo "All metadata outputs set:"
+          echo "  short_sha:      $SHORT_SHA"
+          echo "  branch:         ${{ github.ref_name }}"
+          echo "  actor:          ${{ github.actor }}"
+          echo "  run_number:     ${{ github.run_number }}"
+          echo "  python_version: 3.14"
+
+      # ─── STEP 4: Consume all metadata outputs ────────────────────────────
+      - name: Build image tag from metadata
+        id: image-tag
+        run: |
+          # Combine multiple step outputs to build a derived value
+          IMAGE_TAG="${{ steps.metadata.outputs.branch }}-${{ steps.metadata.outputs.short_sha }}"
+          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "Computed image tag: $IMAGE_TAG"
+
+      # ─── STEP 5: Conditional logic based on output values ────────────────
+      - name: Conditional step using output value
+        run: |
+          BRANCH="${{ steps.metadata.outputs.branch }}"
+          echo "Current branch: $BRANCH"
+
+          if [ "$BRANCH" == "main" ]; then
+            echo "On main branch — would push image to production registry"
+          else
+            echo "Not on main — would push to dev registry only"
+          fi
+
+      # ─── STEP 6: Python step setting outputs ─────────────────────────────
+      - name: Python step with output
+        id: python-output
+        shell: python
+        run: |
+          import os
+          import sys
+          import hashlib
+
+          # Generate a value using Python
+          data = f"build-{os.environ.get('GITHUB_SHA', 'unknown')}"
+          checksum = hashlib.sha256(data.encode()).hexdigest()[:16]
+
+          # Write to GITHUB_OUTPUT — same mechanism, any shell
+          github_output = os.environ['GITHUB_OUTPUT']
+          with open(github_output, 'a') as f:
+              f.write(f"checksum={checksum}\n")
+              f.write(f"python_version={sys.version.split()[0]}\n")
+
+          print(f"Python version: {sys.version.split()[0]}")
+          print(f"Build checksum: {checksum}")
+
+      # ─── STEP 7: Print all collected outputs ─────────────────────────────
+      - name: Print all outputs summary
+        run: |
+          echo "══════════════════════════════════════════"
+          echo "  ALL STEP OUTPUTS"
+          echo "══════════════════════════════════════════"
+          echo ""
+          echo "  From 'timestamp' step:"
+          echo "    value:          ${{ steps.timestamp.outputs.value }}"
+          echo ""
+          echo "  From 'metadata' step:"
+          echo "    short_sha:      ${{ steps.metadata.outputs.short_sha }}"
+          echo "    branch:         ${{ steps.metadata.outputs.branch }}"
+          echo "    actor:          ${{ steps.metadata.outputs.actor }}"
+          echo "    run_number:     ${{ steps.metadata.outputs.run_number }}"
+          echo "    python_version: ${{ steps.metadata.outputs.python_version }}"
+          echo ""
+          echo "  From 'image-tag' step:"
+          echo "    tag:            ${{ steps.image-tag.outputs.tag }}"
+          echo ""
+          echo "  From 'python-output' step:"
+          echo "    checksum:       ${{ steps.python-output.outputs.checksum }}"
+          echo "    python_version: ${{ steps.python-output.outputs.python_version }}"
+          echo "══════════════════════════════════════════"

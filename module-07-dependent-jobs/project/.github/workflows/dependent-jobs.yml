@@ -1,0 +1,242 @@
+# =============================================================================
+# Dependent Jobs Pipeline — Module 07, Project 5
+#
+# Sequential pipeline: validate → build → test → notify
+#
+# Demonstrates:
+#   - needs: to enforce job order
+#   - Job outputs (passing values between jobs)
+#   - Conditional job execution based on upstream results
+#   - always() for notification jobs
+#   - Accessing needs.<job>.result and needs.<job>.outputs.<name>
+# =============================================================================
+
+name: Dependent Jobs Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+
+  # ─── JOB 1: VALIDATE ──────────────────────────────────────────────────────
+  # Runs first. Checks that required files exist and sets a validation output.
+  # All subsequent jobs depend on this one.
+  validate:
+    name: Validate Prerequisites
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Job outputs: values downstream jobs can read via needs.validate.outputs.*
+    outputs:
+      is_valid: ${{ steps.check-files.outputs.is_valid }}
+      validation_message: ${{ steps.check-files.outputs.message }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check required files exist
+        id: check-files
+        run: |
+          echo "Validating project structure..."
+          IS_VALID=true
+          MESSAGE="All checks passed"
+
+          # Check for key files (adjust to your project)
+          for FILE in "README.md" ".gitignore"; do
+            if [ -f "$FILE" ]; then
+              echo "  ✓ $FILE found"
+            else
+              echo "  ✗ $FILE MISSING"
+              IS_VALID=false
+              MESSAGE="Required file '$FILE' is missing"
+            fi
+          done
+
+          # Write outputs
+          echo "is_valid=$IS_VALID" >> $GITHUB_OUTPUT
+          echo "message=$MESSAGE" >> $GITHUB_OUTPUT
+
+          if [ "$IS_VALID" == "false" ]; then
+            echo "Validation FAILED: $MESSAGE"
+            exit 1
+          else
+            echo "Validation PASSED"
+          fi
+
+  # ─── JOB 2: BUILD ─────────────────────────────────────────────────────────
+  # Only runs if validate succeeds.
+  # Produces a build artifact and sets version/artifact-name outputs.
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: validate    # DEPENDENCY: wait for validate
+
+    # Skip if validation explicitly marked things as invalid
+    if: needs.validate.outputs.is_valid == 'true'
+
+    outputs:
+      build_version: ${{ steps.set-version.outputs.version }}
+      artifact_name: ${{ steps.set-version.outputs.artifact_name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Determine build version
+        id: set-version
+        run: |
+          # In a real project, read from pyproject.toml or version.txt
+          VERSION="1.0.${{ github.run_number }}"
+          ARTIFACT_NAME="my-app-${VERSION}-build"
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+
+          echo "Build version: $VERSION"
+          echo "Artifact name: $ARTIFACT_NAME"
+
+      - name: Build the application
+        run: |
+          echo "Building version ${{ steps.set-version.outputs.version }}..."
+          mkdir -p dist
+
+          # Create a build manifest (in real projects this would be your compiled app)
+          cat > dist/build-info.txt << EOF
+          App: my-python-app
+          Version: ${{ steps.set-version.outputs.version }}
+          Commit: ${{ github.sha }}
+          Branch: ${{ github.ref_name }}
+          Built at: $(date -u)
+          Builder: ${{ github.actor }}
+          EOF
+
+          echo "Build complete!"
+          cat dist/build-info.txt
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.set-version.outputs.artifact_name }}
+          path: dist/
+          retention-days: 7
+
+      - name: Confirm upstream validation message
+        run: |
+          echo "Validation message was: ${{ needs.validate.outputs.validation_message }}"
+
+  # ─── JOB 3: TEST ──────────────────────────────────────────────────────────
+  # Runs after build. Downloads the artifact and runs tests against it.
+  test:
+    name: Test Application
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build    # DEPENDENCY: wait for build
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}    # use the output from build job
+          path: ./downloaded-build
+
+      - name: Verify build artifact
+        run: |
+          echo "Downloaded artifact contents:"
+          ls -la downloaded-build/
+          echo ""
+          echo "Build info:"
+          cat downloaded-build/build-info.txt
+
+      - name: Install test dependencies
+        run: pip install pytest pytest-cov
+
+      - name: Run tests (simulated)
+        run: |
+          echo "Testing version ${{ needs.build.outputs.build_version }}..."
+          # In a real project: pytest tests/ -v --cov=src
+
+          # Simulate test output
+          echo "PASSED test_health_check"
+          echo "PASSED test_api_endpoints"
+          echo "PASSED test_error_handling"
+          echo "PASSED test_authentication"
+          echo ""
+          echo "4 passed in 0.82s"
+          echo "Coverage: 87%"
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()   # upload even if tests fail
+        with:
+          name: test-results-${{ github.run_number }}
+          path: test-results/
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ─── JOB 4: NOTIFY ────────────────────────────────────────────────────────
+  # Runs ALWAYS — after all other jobs, whether they passed or failed.
+  # Prints a comprehensive summary of the entire pipeline.
+  notify:
+    name: Pipeline Notification
+    runs-on: ubuntu-latest
+    needs: [validate, build, test]    # waits for ALL three
+    if: always()                       # runs regardless of success or failure
+
+    steps:
+      - name: Print pipeline summary
+        run: |
+          echo "══════════════════════════════════════════════════"
+          echo "  PIPELINE COMPLETE — NOTIFICATION"
+          echo "══════════════════════════════════════════════════"
+          echo ""
+          echo "  Workflow: ${{ github.workflow }}"
+          echo "  Triggered by: ${{ github.event_name }}"
+          echo "  Branch: ${{ github.ref_name }}"
+          echo "  Commit: ${{ github.sha }}"
+          echo "  Actor: ${{ github.actor }}"
+          echo ""
+          echo "  ── Job Results ────────────────────────────────"
+          echo "  validate: ${{ needs.validate.result }}"
+          echo "  build:    ${{ needs.build.result }}"
+          echo "  test:     ${{ needs.test.result }}"
+          echo ""
+          echo "  ── Build Info ─────────────────────────────────"
+          echo "  Version:   ${{ needs.build.outputs.build_version }}"
+          echo "  Artifact:  ${{ needs.build.outputs.artifact_name }}"
+          echo ""
+
+          # Determine and report overall status
+          if [[ "${{ needs.validate.result }}" == "success" ]] && \
+             [[ "${{ needs.build.result }}" == "success" ]] && \
+             [[ "${{ needs.test.result }}" == "success" ]]; then
+            echo "  OVERALL: ✅ PIPELINE PASSED"
+            echo ""
+            echo "  All jobs succeeded. Code is ready for deployment."
+          else
+            echo "  OVERALL: ❌ PIPELINE FAILED"
+            echo ""
+            echo "  Review the failed job logs above for details."
+          fi
+          echo "══════════════════════════════════════════════════"

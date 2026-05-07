@@ -1,0 +1,88 @@
+# ============================================================
+# YAML Example 01: Basic Syntax
+# ============================================================
+# This file demonstrates the fundamental rules of YAML syntax.
+# Read each section carefully — these rules apply everywhere YAML is used.
+# ============================================================
+
+# ─── RULE 1: COMMENTS ────────────────────────────────────────────
+# Anything after a # sign is a comment — YAML ignores it.
+# Comments can be on their own line or at the end of a value line.
+
+# ─── RULE 2: KEY-VALUE PAIRS ─────────────────────────────────────
+# The most basic YAML structure: key: value
+# There MUST be a space after the colon.
+
+course_name: GitHub Actions Master Class
+instructor: Prakhar Gupta
+version: "2.0"                  # quoted string — prevents "2.0" being read as float
+is_active: true                 # boolean — unquoted
+
+# ─── RULE 3: INDENTATION ─────────────────────────────────────────
+# YAML uses SPACES for indentation. NEVER use tabs.
+# Convention: 2 spaces per level of nesting.
+
+course_details:
+  title: GitHub Actions Master Class   # 2 spaces = one level deep
+  level: beginner to advanced
+  duration_hours: 40
+  modules:
+    count: 13                           # 4 spaces = two levels deep
+    start: module-00
+    end: module-12
+
+# ─── RULE 4: CASE SENSITIVITY ────────────────────────────────────
+# Keys and values are case-sensitive!
+
+Name: Alice            # key "Name" (capital N)
+name: Bob              # key "name" (lowercase n) — DIFFERENT key
+
+# ─── RULE 5: MAPPING (DICTIONARY / OBJECT) ───────────────────────
+# A set of key-value pairs nested under a parent key.
+# This is the most common structure in GitHub Actions workflows.
+
+instructor_profile:
+  name: Prakhar Gupta
+  email: instructor@example.com
+  github_username: prakhar
+  years_experience: 5
+  specializations:
+    - DevOps
+    - GitHub Actions
+    - Cloud Infrastructure
+
+# ─── RULE 6: STRINGS DON'T ALWAYS NEED QUOTES ───────────────────
+# Simple strings work without quotes:
+city: London
+country: United Kingdom
+
+# But these strings NEED quotes (they'd be misinterpreted otherwise):
+colon_value: "http://example.com"         # has a colon
+hash_value: "This is not #a comment"      # has a hash
+true_string: "true"                       # would be bool without quotes
+yes_string: "yes"                         # would be bool without quotes
+empty_string: ""                          # explicitly empty string
+
+# ─── REAL-WORLD EXAMPLE: COURSE INFO MAPPING ─────────────────────
+# This is what a typical YAML config file looks like.
+
+course_info:
+  name: GitHub Actions Master Class
+  version: "1.0.0"
+  active: true
+  max_students: 500
+  topics:
+    - YAML Fundamentals
+    - Git Basics
+    - Workflow Triggers
+    - CI/CD Pipelines
+  contact:
+    email: "support@example.com"
+    website: "https://example.com"
+  metadata:
+    created: "2024-01-01"
+    updated: "2024-06-01"
+    tags:
+      - devops
+      - github
+      - automation

@@ -1,0 +1,139 @@
+# ============================================================
+# YAML Example 05: Anchors and Aliases
+# ============================================================
+# Anchors (&name) mark a value for reuse.
+# Aliases (*name) reference that value elsewhere.
+# Merge keys (<<:) combine mappings.
+#
+# IMPORTANT: GitHub Actions does NOT support anchors in workflow
+# files. Use them in other YAML contexts (Docker Compose, etc.)
+# They are worth understanding as a YAML concept.
+# ============================================================
+
+# ─── BASIC ANCHOR AND ALIAS ──────────────────────────────────────
+# & creates an anchor (marks a value)
+# * creates an alias (references the anchor)
+
+greeting: &hello "Hello, World!"     # &hello is the anchor
+repeated_greeting: *hello            # *hello refers to the anchor
+# repeated_greeting has the same value as greeting: "Hello, World!"
+
+# ─── ANCHORING A MAPPING ─────────────────────────────────────────
+# Anchor an entire dictionary:
+
+default_timeouts: &timeouts
+  connection_timeout: 30
+  read_timeout: 60
+  write_timeout: 30
+
+service_a:
+  name: Service A
+  <<: *timeouts              # merge the timeouts mapping into service_a
+  url: "http://service-a"
+
+service_b:
+  name: Service B
+  <<: *timeouts              # same timeouts for service_b
+  url: "http://service-b"
+  read_timeout: 120          # override one value — this takes precedence over merged value
+
+# ─── ANCHORING A SEQUENCE ────────────────────────────────────────
+
+common_packages: &packages
+  - git
+  - curl
+  - jq
+  - unzip
+
+ubuntu_setup:
+  os: ubuntu-latest
+  packages: *packages        # same packages list
+
+debian_setup:
+  os: debian-latest
+  packages: *packages        # reuse the same list
+
+# ─── MULTIPLE MERGE KEYS ─────────────────────────────────────────
+# You can merge multiple anchors into one mapping:
+
+base_config: &base
+  log_level: info
+  timezone: UTC
+
+production_extras: &prod_extras
+  replicas: 3
+  auto_scaling: true
+
+production:
+  <<: [*base, *prod_extras]  # merge both
+  environment: production
+  log_level: warn             # override log_level from base
+
+# ─── REAL-WORLD EXAMPLE: CI JOB DEFAULTS ────────────────────────
+# This pattern is useful in Docker Compose and Kubernetes YAML.
+# In GitHub Actions, use reusable workflows instead.
+
+default_job: &default_job
+  image: node:20
+  timeout: 30
+  retry: 2
+  environment:
+    - NODE_ENV=production
+    - CI=true
+
+build_job:
+  <<: *default_job
+  name: build
+  script:
+    - npm ci
+    - npm run build
+
+test_job:
+  <<: *default_job
+  name: test
+  script:
+    - npm ci
+    - npm test
+  timeout: 60                # override timeout
+
+lint_job:
+  <<: *default_job
+  name: lint
+  timeout: 10                # linting should be fast
+  script:
+    - npm run lint
+
+# ─── WHY GITHUB ACTIONS DOESN'T SUPPORT ANCHORS ─────────────────
+# GitHub Actions uses a custom YAML parser that strips anchors/aliases
+# before processing the file. The design team chose to not support them
+# because reusable workflows are the preferred DRY mechanism.
+#
+# Instead of anchors, in GitHub Actions use:
+# - Reusable workflows (workflow_call) — covered in Module 11
+# - Composite actions — covered in Module 11
+# - Job-level defaults — not as flexible but built-in
+
+# ─── ANCHORS IN DOCKER COMPOSE (FYI) ─────────────────────────────
+# This is the most common real-world use of anchors.
+# docker-compose.yml IS a file where anchors ARE supported:
+
+x-common: &common_service    # x- prefix is a Docker Compose extension field
+  restart: unless-stopped
+  networks:
+    - app_network
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+
+web:
+  <<: *common_service
+  image: nginx:alpine
+  ports:
+    - "80:80"
+
+api:
+  <<: *common_service
+  image: node:20
+  ports:
+    - "3000:3000"

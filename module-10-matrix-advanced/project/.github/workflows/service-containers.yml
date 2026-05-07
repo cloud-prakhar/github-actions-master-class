@@ -1,0 +1,527 @@
+# ============================================================
+# WORKFLOW: Service Containers Demo
+# ============================================================
+#
+# PURPOSE:
+#   Demonstrates how to run side-car Docker containers alongside
+#   your GitHub Actions jobs. Service containers are commonly used
+#   for integration tests that require a real database, cache, or
+#   message queue — not a mock or in-memory fake.
+#
+# KEY CONCEPTS DEMONSTRATED:
+#   1. services: keyword — define side-car containers
+#   2. PostgreSQL service — database for integration tests
+#   3. Redis service — cache for integration tests
+#   4. Health checks — wait for containers to be ready
+#   5. Port mapping — expose container ports to localhost
+#   6. Environment variables for service configuration
+#   7. Connecting to services from job steps
+#
+# HOW SERVICE CONTAINERS WORK:
+#   1. GitHub Actions starts service containers BEFORE job steps
+#   2. Services run in the same Docker network as the job
+#   3. Steps connect to services via localhost (if running on runner)
+#      or via service name (if running inside a container job)
+#   4. Health checks tell GitHub Actions to wait until the
+#      service is actually ready to accept connections
+#   5. Services are automatically stopped/removed after the job
+
+name: Service Containers Demo
+
+on:
+  push:
+    branches:
+      - "**"
+
+jobs:
+
+  # ----------------------------------------------------------
+  # JOB: Integration Tests with PostgreSQL and Redis
+  # ----------------------------------------------------------
+  # This job demonstrates two service containers running
+  # simultaneously: a PostgreSQL database and a Redis cache.
+  integration-tests:
+    name: "Integration Tests (PostgreSQL + Redis)"
+    runs-on: ubuntu-latest
+
+    # --------------------------------------------------------
+    # SERVICE CONTAINERS
+    # --------------------------------------------------------
+    # The 'services' keyword defines containers that run alongside
+    # this job. They start before the job steps and stop after.
+    #
+    # Each service is named (postgres, redis) and that name becomes
+    # the hostname when connecting from within a container job.
+    # When running directly on the runner (no container:), use
+    # 'localhost' with the mapped host port.
+    services:
+
+      # ------------------------------------------------------
+      # SERVICE 1: PostgreSQL Database
+      # ------------------------------------------------------
+      # We use postgres:15 (pinned major version for stability).
+      # In production pipelines, consider pinning to a full digest
+      # for deterministic builds.
+      postgres:
+        # The Docker image to use for this service
+        image: postgres:15
+
+        # Environment variables configure the PostgreSQL container.
+        # POSTGRES_PASSWORD is required; without it Postgres refuses to start.
+        env:
+          POSTGRES_USER: testuser          # Database superuser
+          POSTGRES_PASSWORD: testpassword   # Required: superuser password
+          POSTGRES_DB: testdb               # Database to create on startup
+
+        # PORT MAPPING: <host-port>:<container-port>
+        # The container's internal port 5432 is mapped to the
+        # runner's localhost:5432. Your job steps connect to
+        # localhost:5432 (not the container directly).
+        ports:
+          - 5432:5432
+
+        # HEALTH CHECK OPTIONS
+        # These are passed directly to 'docker run' as flags.
+        # Without health checks, your steps might try to connect
+        # before PostgreSQL has finished initializing — causing
+        # "connection refused" errors.
+        #
+        # GitHub Actions waits for the service to become "healthy"
+        # before executing any job steps.
+        #
+        # --health-cmd: Shell command to test health.
+        #   'pg_isready' checks if PostgreSQL is accepting connections.
+        #   Exit 0 = healthy, non-zero = unhealthy.
+        #
+        # --health-interval: How often to run the health check (every 10s)
+        # --health-timeout: Max time for one check (5s)
+        # --health-retries: Mark unhealthy after this many consecutive failures
+        #
+        # Total max wait: interval × retries = 10s × 5 = 50 seconds
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      # ------------------------------------------------------
+      # SERVICE 2: Redis Cache
+      # ------------------------------------------------------
+      # Redis is simpler to configure than PostgreSQL — it needs
+      # no authentication by default and starts very quickly.
+      redis:
+        # Use Redis 7 Alpine (smaller image, faster pull)
+        image: redis:7-alpine
+
+        # Map Redis's default port
+        ports:
+          - 6379:6379
+
+        # Health check: 'redis-cli ping' returns PONG if Redis is ready
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    # --------------------------------------------------------
+    # STEPS
+    # --------------------------------------------------------
+    # By the time steps start, both PostgreSQL and Redis are
+    # healthy and ready to accept connections.
+    steps:
+
+      # STEP 1: Checkout
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      # STEP 2: Verify services are running
+      # At this point, GitHub Actions has already waited for the
+      # health checks to pass. This step is informational.
+      - name: "Verify service containers are healthy"
+        run: |
+          echo "============================================"
+          echo "  SERVICE CONTAINER STATUS"
+          echo "============================================"
+          echo ""
+          echo "PostgreSQL:"
+          echo "  Host     : localhost"
+          echo "  Port     : 5432"
+          echo "  Database : testdb"
+          echo "  User     : testuser"
+          echo ""
+          echo "Redis:"
+          echo "  Host     : localhost"
+          echo "  Port     : 6379"
+          echo ""
+          echo "Both services passed health checks before"
+          echo "these steps started executing."
+          echo "============================================"
+
+      # STEP 3: Install PostgreSQL client tools
+      # The ubuntu-latest runner has many tools pre-installed, but
+      # not always the psql client. Install it to test the connection.
+      - name: "Install PostgreSQL client"
+        run: |
+          echo "Installing PostgreSQL client tools..."
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+          echo "psql version: $(psql --version)"
+
+      # STEP 4: Test PostgreSQL Connection
+      # Connect to the database service using the mapped localhost port.
+      # PGPASSWORD environment variable is used by psql for authentication
+      # (avoids interactive password prompt).
+      - name: "Test PostgreSQL connection"
+        env:
+          # Pass the database password via environment variable
+          # In a real workflow, use: ${{ secrets.DB_PASSWORD }}
+          PGPASSWORD: testpassword
+        run: |
+          echo "Testing PostgreSQL connection..."
+          echo ""
+
+          # Basic connectivity test
+          echo "1. Testing basic connection..."
+          psql \
+            --host=localhost \
+            --port=5432 \
+            --username=testuser \
+            --dbname=testdb \
+            --command="SELECT version();"
+
+          echo ""
+          echo "2. Creating a test table..."
+          psql \
+            --host=localhost \
+            --port=5432 \
+            --username=testuser \
+            --dbname=testdb \
+            --command="
+              CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+              );
+            "
+
+          echo ""
+          echo "3. Inserting test data..."
+          psql \
+            --host=localhost \
+            --port=5432 \
+            --username=testuser \
+            --dbname=testdb \
+            --command="
+              INSERT INTO users (name, email) VALUES
+                ('Alice Johnson', 'alice@example.com'),
+                ('Bob Smith', 'bob@example.com'),
+                ('Charlie Brown', 'charlie@example.com');
+            "
+
+          echo ""
+          echo "4. Querying data..."
+          psql \
+            --host=localhost \
+            --port=5432 \
+            --username=testuser \
+            --dbname=testdb \
+            --command="SELECT * FROM users;"
+
+          echo ""
+          echo "PostgreSQL connection test: PASSED"
+
+      # STEP 5: Run database migration simulation
+      # In real projects, you would run your actual migrations here
+      - name: "Simulate database migrations"
+        env:
+          PGPASSWORD: testpassword
+        run: |
+          echo "Running database migrations..."
+          echo ""
+
+          # Simulate schema migrations
+          psql \
+            --host=localhost \
+            --port=5432 \
+            --username=testuser \
+            --dbname=testdb \
+            --command="
+              CREATE TABLE IF NOT EXISTS sessions (
+                id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id),
+                token VARCHAR(255) NOT NULL,
+                expires_at TIMESTAMP NOT NULL
+              );
+            "
+
+          echo "Migration 001_create_sessions: OK"
+
+          psql \
+            --host=localhost \
+            --port=5432 \
+            --username=testuser \
+            --dbname=testdb \
+            --command="
+              CREATE INDEX IF NOT EXISTS idx_sessions_token
+              ON sessions(token);
+            "
+
+          echo "Migration 002_index_sessions_token: OK"
+          echo ""
+          echo "All migrations applied successfully."
+
+      # STEP 6: Install Redis CLI (verify it's available)
+      - name: "Verify Redis CLI is available"
+        run: |
+          echo "Checking for redis-cli..."
+          if command -v redis-cli &> /dev/null; then
+            echo "redis-cli found: $(redis-cli --version)"
+          else
+            echo "Installing redis-tools..."
+            sudo apt-get install -y -qq redis-tools
+            echo "redis-cli version: $(redis-cli --version)"
+          fi
+
+      # STEP 7: Test Redis Connection
+      # Connect to Redis using redis-cli. The -h and -p flags specify
+      # host and port (both localhost since we're on the runner).
+      - name: "Test Redis connection and basic operations"
+        run: |
+          echo "Testing Redis connection..."
+          echo ""
+
+          # 1. Ping test
+          echo "1. PING test..."
+          PONG=$(redis-cli -h localhost -p 6379 PING)
+          echo "   Response: $PONG"
+          if [[ "$PONG" == "PONG" ]]; then
+            echo "   Redis PING: PASSED"
+          else
+            echo "   Redis PING: FAILED"
+            exit 1
+          fi
+
+          echo ""
+          # 2. SET and GET operations
+          echo "2. SET/GET operations..."
+          redis-cli -h localhost -p 6379 SET "greeting" "Hello from GitHub Actions"
+          VALUE=$(redis-cli -h localhost -p 6379 GET "greeting")
+          echo "   SET greeting = 'Hello from GitHub Actions'"
+          echo "   GET greeting = '$VALUE'"
+
+          echo ""
+          # 3. Key expiration (TTL)
+          echo "3. Key expiration (TTL)..."
+          redis-cli -h localhost -p 6379 SET "session:abc123" "user_data" EX 3600
+          TTL=$(redis-cli -h localhost -p 6379 TTL "session:abc123")
+          echo "   SET session:abc123 with 3600s TTL"
+          echo "   TTL = $TTL seconds"
+
+          echo ""
+          # 4. Hash operations
+          echo "4. Hash operations (simulating user cache)..."
+          redis-cli -h localhost -p 6379 HSET "user:1" name "Alice" email "alice@example.com"
+          redis-cli -h localhost -p 6379 HSET "user:2" name "Bob" email "bob@example.com"
+          echo "   Cached user:1 and user:2"
+
+          NAME=$(redis-cli -h localhost -p 6379 HGET "user:1" name)
+          echo "   HGET user:1 name = '$NAME'"
+
+          echo ""
+          # 5. List operations
+          echo "5. List operations (simulating job queue)..."
+          redis-cli -h localhost -p 6379 RPUSH "job_queue" "job1" "job2" "job3"
+          LENGTH=$(redis-cli -h localhost -p 6379 LLEN "job_queue")
+          echo "   Pushed 3 jobs to queue"
+          echo "   Queue length = $LENGTH"
+
+          NEXT_JOB=$(redis-cli -h localhost -p 6379 LPOP "job_queue")
+          echo "   Popped next job = '$NEXT_JOB'"
+
+          echo ""
+          echo "Redis connection and operations test: PASSED"
+
+      # STEP 8: Simulate integration test suite
+      # This represents your actual integration tests that use the services
+      - name: "Run integration test suite (simulated)"
+        env:
+          DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/testdb"
+          REDIS_URL: "redis://localhost:6379"
+        run: |
+          echo "============================================"
+          echo "  INTEGRATION TEST SUITE"
+          echo "============================================"
+          echo ""
+          echo "Environment:"
+          echo "  DATABASE_URL : postgresql://testuser:***@localhost:5432/testdb"
+          echo "  REDIS_URL    : redis://localhost:6379"
+          echo ""
+          echo "Running tests..."
+          echo ""
+
+          # Simulate test results
+          echo "  PASS  tests/integration/database.test.js"
+          echo "    ✓ connects to PostgreSQL (45ms)"
+          echo "    ✓ creates user record (23ms)"
+          echo "    ✓ retrieves user by ID (12ms)"
+          echo "    ✓ updates user email (18ms)"
+          echo "    ✓ foreign key constraints work (8ms)"
+          echo ""
+          echo "  PASS  tests/integration/cache.test.js"
+          echo "    ✓ connects to Redis (5ms)"
+          echo "    ✓ stores and retrieves session (3ms)"
+          echo "    ✓ session TTL is respected (15ms)"
+          echo "    ✓ cache invalidation works (7ms)"
+          echo ""
+          echo "  PASS  tests/integration/auth.test.js"
+          echo "    ✓ creates session in both DB and Redis (52ms)"
+          echo "    ✓ validates session from Redis cache (8ms)"
+          echo "    ✓ falls back to DB on cache miss (48ms)"
+          echo ""
+          echo "Test Suites: 3 passed, 3 total"
+          echo "Tests:       12 passed, 12 total"
+          echo "Time:        0.244 s"
+          echo "============================================"
+
+      # STEP 9: Write comprehensive summary
+      - name: "Write service container test summary"
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## Service Container Integration Test Results
+
+          ### Services Used
+
+          | Service | Image | Port | Health Check |
+          |---------|-------|------|--------------|
+          | PostgreSQL | `postgres:15` | `5432` | `pg_isready` |
+          | Redis | `redis:7-alpine` | `6379` | `redis-cli ping` |
+
+          ### Test Results
+
+          | Test Suite | Tests | Status |
+          |-----------|-------|--------|
+          | Database Tests | 5 | :white_check_mark: Passed |
+          | Cache Tests | 4 | :white_check_mark: Passed |
+          | Auth Integration | 3 | :white_check_mark: Passed |
+          | **Total** | **12** | :white_check_mark: **All Passed** |
+
+          ### Key Learnings
+
+          - Service containers start **before** job steps begin
+          - Health checks prevent connection failures during startup
+          - Connect via `localhost` when steps run directly on the runner
+          - Connect via service name (`postgres`, `redis`) when using container jobs
+          - Services are automatically cleaned up after the job completes
+
+          ### Configuration Used
+
+          ```yaml
+          services:
+            postgres:
+              image: postgres:15
+              env:
+                POSTGRES_PASSWORD: ...
+              ports:
+                - 5432:5432
+              options: >-
+                --health-cmd pg_isready
+                --health-interval 10s
+                --health-timeout 5s
+                --health-retries 5
+          ```
+          EOF
+
+  # ----------------------------------------------------------
+  # JOB: Container Job with Service Container
+  # ----------------------------------------------------------
+  # This job demonstrates the alternative setup: running steps
+  # INSIDE a Docker container (container job) while also having
+  # service containers.
+  #
+  # KEY DIFFERENCE: When steps run inside a container (container:
+  # keyword), they connect to services using the SERVICE NAME as
+  # the hostname (not localhost). This is because they share a
+  # Docker network.
+  container-job-with-services:
+    name: "Container Job with Service"
+    runs-on: ubuntu-latest
+
+    # The 'container' keyword makes ALL steps in this job run
+    # inside the specified Docker image, not directly on the runner.
+    container:
+      image: node:20-alpine  # Steps run inside this container
+
+    # Service containers still work — they join the same Docker network
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: appuser
+          POSTGRES_PASSWORD: apppassword
+          POSTGRES_DB: appdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        # Note: No ports mapping needed when using container jobs!
+        # Container-to-container communication uses the Docker network.
+        # The service is accessible as hostname 'postgres' on port 5432.
+
+    steps:
+      - name: "Checkout"
+        uses: actions/checkout@v4
+
+      - name: "Show container environment"
+        run: |
+          echo "Running inside container: node:20-alpine"
+          echo "Node version: $(node --version)"
+          echo "Alpine version: $(cat /etc/alpine-release)"
+
+      # KEY DIFFERENCE: In a container job, use the SERVICE NAME
+      # as the hostname, not localhost.
+      - name: "Install pg client in Alpine container"
+        run: |
+          # Alpine uses apk, not apt
+          apk add --no-cache postgresql-client
+
+      - name: "Connect to PostgreSQL using service name"
+        env:
+          PGPASSWORD: apppassword
+        run: |
+          echo "In a container job, connect using service NAME as hostname"
+          echo "Hostname: postgres (not localhost!)"
+          echo ""
+          # Use 'postgres' (service name) as the hostname
+          psql \
+            --host=postgres \
+            --port=5432 \
+            --username=appuser \
+            --dbname=appdb \
+            --command="SELECT 'Connected via service name hostname!' AS result;"
+
+      - name: "Write container job summary"
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## Container Job with Service Container
+
+          ### Key Difference from Regular Service Containers
+
+          | Scenario | Connect to Service Using |
+          |----------|--------------------------|
+          | Steps on runner (no `container:`) | `localhost:<port>` |
+          | Steps in container (`container:` set) | `<service-name>:<port>` |
+
+          ### Why?
+
+          When steps run inside a container, they are on a Docker network
+          where service containers are reachable by their name. The runner's
+          `localhost` is not the container's network interface.
+
+          When steps run directly on the runner, the port mapping
+          `<host-port>:<container-port>` bridges the service to `localhost`.
+          EOF

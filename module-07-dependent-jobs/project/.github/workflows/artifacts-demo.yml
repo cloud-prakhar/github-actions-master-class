@@ -1,0 +1,173 @@
+# =============================================================================
+# Artifacts Demo — Module 07
+#
+# Demonstrates artifact upload and download patterns:
+#   - Single file artifact
+#   - Directory artifact
+#   - Multiple artifacts from one job
+#   - Downloading in a later job
+#   - Retention policies
+#   - if-no-files-found behavior
+# =============================================================================
+
+name: Artifacts Demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+
+  # ─── JOB 1: BUILD — produces artifacts ────────────────────────────────────
+  build:
+    name: Build and Generate Artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Generate build report
+        run: |
+          mkdir -p reports dist coverage
+
+          # Simulated build report
+          cat > reports/build-report.txt << EOF
+          Build Report
+          ============
+          App: my-python-app
+          Version: 1.0.${{ github.run_number }}
+          Commit: ${{ github.sha }}
+          Branch: ${{ github.ref_name }}
+          Builder: ${{ github.actor }}
+          Built at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          Python: ${{ env.PYTHON_VERSION }}
+          EOF
+
+          echo "Build report created:"
+          cat reports/build-report.txt
+
+      - name: Generate simulated coverage data
+        run: |
+          pip install pytest pytest-cov --quiet
+
+          # Create a simulated coverage report
+          cat > coverage/coverage-summary.txt << EOF
+          Coverage Summary
+          ================
+          Module        Lines  Covered   %
+          ────────────  ─────  ───────   ─
+          src/app.py      120       98  82%
+          src/models.py    85       80  94%
+          src/utils.py     45       45 100%
+          ────────────  ─────  ───────   ─
+          TOTAL           250      223  89%
+          EOF
+
+          cat coverage/coverage-summary.txt
+
+      - name: Generate distribution files
+        run: |
+          # Simulated built distribution
+          echo "my-python-app==1.0.${{ github.run_number }}" > dist/requirements-lock.txt
+          echo "Binary build would be here" > dist/app-binary.txt
+
+      # ── UPLOAD ARTIFACT 1: Build report (single file) ─────────────────────
+      # Tip: Use descriptive artifact names that include the run number or SHA
+      # so you can distinguish between artifacts from different runs.
+      - name: Upload build report
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-report-${{ github.run_number }}
+          path: reports/build-report.txt   # single file
+          retention-days: 30               # keep for 30 days
+          if-no-files-found: error         # fail if report wasn't generated
+
+      # ── UPLOAD ARTIFACT 2: Coverage report (directory) ────────────────────
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_number }}
+          path: coverage/                  # entire directory
+          retention-days: 90              # keep coverage reports longer
+          if-no-files-found: warn          # warn but don't fail if no coverage
+
+      # ── UPLOAD ARTIFACT 3: Distribution files ─────────────────────────────
+      - name: Upload distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7               # builds are kept briefly
+          if-no-files-found: error
+
+  # ─── JOB 2: DEPLOY — downloads artifacts ──────────────────────────────────
+  deploy:
+    name: Deploy Using Artifacts
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download build report
+        uses: actions/download-artifact@v4
+        with:
+          name: build-report-${{ github.run_number }}
+          path: ./downloaded/reports       # save to this path
+
+      - name: Download distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: ./downloaded/dist
+
+      - name: Verify downloaded artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          find ./downloaded -type f | sort
+
+          echo ""
+          echo "Build report contents:"
+          cat ./downloaded/reports/build-report.txt
+
+          echo ""
+          echo "Distribution files:"
+          ls -la ./downloaded/dist/
+
+      - name: Simulate deployment
+        run: |
+          echo "Deploying using downloaded artifacts..."
+          echo ""
+          echo "Build info:"
+          cat ./downloaded/reports/build-report.txt
+          echo ""
+          echo "Deployment simulated successfully!"
+
+  # ─── JOB 3: VERIFY — shows if-no-files-found behavior ────────────────────
+  verify-coverage:
+    name: Verify Coverage Report
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-${{ github.run_number }}
+          path: ./coverage
+
+      - name: Read and print coverage
+        run: |
+          echo "Coverage report from artifact:"
+          cat ./coverage/coverage-summary.txt
+          echo ""
+          echo "Note: In a real project, you'd compare coverage % to a threshold"
+          echo "and fail the build if coverage drops below (e.g., 80%)"

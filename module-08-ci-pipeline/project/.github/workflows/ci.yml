@@ -1,0 +1,285 @@
+# =============================================================================
+# CI Pipeline — Module 08, Project 6
+# Full CI Pipeline for a Python 3.14 Flask Application
+#
+# Pipeline stages (in order):
+#   lint  → Flake8 code style check
+#   test  → pytest unit tests + coverage (needs: lint)
+#   build → Verify project is importable + produce artifact (needs: test)
+#   ci-status → Summary job that always runs (needs: all three above)
+#
+# Key features demonstrated:
+#   - pip dependency caching (actions/cache@v4)
+#   - Python 3.14 setup (actions/setup-python@v5)
+#   - Coverage reports uploaded as artifacts
+#   - Concurrency: cancel older runs for same branch/PR
+#   - Status summary job (single required check for branch protection)
+# =============================================================================
+
+name: CI Pipeline (Python)
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+
+# Cancel older runs for the same branch/PR when a new commit arrives.
+# group uses PR number for PRs, branch ref for direct pushes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+    # All run: steps execute relative to the project directory
+    working-directory: module-08-ci-pipeline/project
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # JOB 1: LINT
+  # Flake8 checks run first — they're fast (~20s) and cheap.
+  # If lint fails, the test and build jobs are automatically skipped
+  # because they declare `needs: lint`.
+  # ─────────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (flake8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Install Python 3.14.
+      # setup-python@v5 installs the requested version and adds it to PATH.
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          # cache: pip here caches ~/.cache/pip using requirements files as
+          # the cache key. When requirements-dev.txt hasn't changed, pip install
+          # completes in seconds instead of minutes.
+          cache: pip
+          cache-dependency-path: |
+            module-08-ci-pipeline/project/requirements.txt
+            module-08-ci-pipeline/project/requirements-dev.txt
+
+      - name: Install linting dependencies
+        run: pip install flake8 flake8-bugbear
+
+      - name: Run flake8
+        run: |
+          echo "Running flake8 on src/ and tests/..."
+          flake8 src/ tests/ \
+            --max-line-length=120 \
+            --exclude=__pycache__,.venv,venv
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # JOB 2: TEST
+  # Run pytest with coverage. Only runs if lint passes.
+  # Uploads the HTML coverage report as an artifact for 30-day review.
+  # ─────────────────────────────────────────────────────────────────────────
+  test:
+    name: Test (pytest + coverage)
+    runs-on: ubuntu-latest
+    needs: lint         # only run if lint passes
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            module-08-ci-pipeline/project/requirements.txt
+            module-08-ci-pipeline/project/requirements-dev.txt
+
+      # `pip install -r requirements-dev.txt` installs both runtime and dev deps.
+      # In CI, pip restores from cache first — only downloads new/changed packages.
+      - name: Install all dependencies
+        run: pip install -r requirements-dev.txt
+
+      # Run pytest with coverage.
+      # --cov=src       : measure coverage on the src/ directory
+      # --cov-report=term-missing : show which lines are not covered (in logs)
+      # --cov-report=html         : generate HTML report in htmlcov/
+      # --cov-report=xml          : machine-readable XML (for codecov, sonar, etc.)
+      # --tb=short                : shorter tracebacks for easier reading in logs
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=html:htmlcov \
+            --cov-report=xml:coverage.xml \
+            -v \
+            --tb=short
+        env:
+          PYTHONPATH: src   # allow tests to import from src/
+
+      # Upload the HTML coverage report.
+      # if: always() ensures it uploads even if some tests failed —
+      # so you can see partial coverage when debugging test failures.
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report-py${{ env.PYTHON_VERSION }}
+          path: module-08-ci-pipeline/project/htmlcov/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload coverage XML (for external tools)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-xml
+          path: module-08-ci-pipeline/project/coverage.xml
+          retention-days: 7
+          if-no-files-found: warn
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # JOB 3: BUILD
+  # Verify the project is importable and create a build manifest.
+  # In a real project this would compile, bundle, or package the app.
+  # ─────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test         # only run if tests pass
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            module-08-ci-pipeline/project/requirements.txt
+            module-08-ci-pipeline/project/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify application imports cleanly
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, 'src')
+          from app import create_app
+          app = create_app()
+          print(f'Flask app created: {app.name}')
+          print('Application import: OK')
+          "
+        env:
+          PYTHONPATH: src
+
+      - name: Create build manifest
+        run: |
+          mkdir -p dist
+          python - << 'PYEOF'
+          import json, os, datetime
+
+          manifest = {
+              "name": "github-actions-ci-demo",
+              "version": "1.0.0",
+              "python_version": "${{ env.PYTHON_VERSION }}",
+              "build_time": datetime.datetime.utcnow().isoformat() + "Z",
+              "commit": "${{ github.sha }}",
+              "branch": "${{ github.ref_name }}",
+              "workflow": "${{ github.workflow }}",
+              "run_number": "${{ github.run_number }}",
+              "runner_os": "${{ runner.os }}",
+          }
+
+          with open("dist/build-manifest.json", "w") as f:
+              json.dump(manifest, f, indent=2)
+
+          print("Build manifest:")
+          print(json.dumps(manifest, indent=2))
+          PYEOF
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+          path: module-08-ci-pipeline/project/dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # JOB 4: CI STATUS (summary job)
+  #
+  # Always runs, regardless of other job outcomes.
+  # Purpose:
+  #   1. Single required status check for branch protection rules
+  #      (require "CI Status" instead of requiring each individual job)
+  #   2. Clear human-readable summary in the workflow logs
+  # ─────────────────────────────────────────────────────────────────────────
+  ci-status:
+    name: CI Status
+    runs-on: ubuntu-latest
+    needs: [lint, test, build]
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Check overall CI result
+        run: |
+          echo "══════════════════════════════════════════════════"
+          echo "  CI PIPELINE STATUS SUMMARY"
+          echo "══════════════════════════════════════════════════"
+          echo ""
+          echo "  Workflow:  ${{ github.workflow }}"
+          echo "  Run #:     ${{ github.run_number }}"
+          echo "  Commit:    ${{ github.sha }}"
+          echo "  Branch:    ${{ github.ref_name }}"
+          echo "  Trigger:   ${{ github.event_name }}"
+          echo "  Python:    ${{ env.PYTHON_VERSION }}"
+          echo ""
+          echo "  Job Results:"
+          echo "  ┌────────────┬──────────────┐"
+          echo "  │ Job        │ Result       │"
+          echo "  ├────────────┼──────────────┤"
+          echo "  │ lint       │ ${{ needs.lint.result }}         │"
+          echo "  │ test       │ ${{ needs.test.result }}         │"
+          echo "  │ build      │ ${{ needs.build.result }}        │"
+          echo "  └────────────┴──────────────┘"
+          echo ""
+
+          if [[ "${{ needs.lint.result }}"  == "failure" ]] || \
+             [[ "${{ needs.test.result }}"  == "failure" ]] || \
+             [[ "${{ needs.build.result }}" == "failure" ]]; then
+            echo "  OVERALL: ❌ PIPELINE FAILED"
+            echo ""
+            echo "  Common causes:"
+            echo "    lint  → flake8 style violations"
+            echo "    test  → failing pytest tests"
+            echo "    build → import errors or missing files"
+            exit 1
+          else
+            echo "  OVERALL: ✅ PIPELINE PASSED"
+            echo ""
+            echo "  All checks passed. Code is ready to merge."
+            echo ""
+            echo "  Artifacts available:"
+            echo "    coverage-report-py${{ env.PYTHON_VERSION }}: HTML coverage report"
+            echo "    build-${{ github.sha }}: Build manifest"
+          fi

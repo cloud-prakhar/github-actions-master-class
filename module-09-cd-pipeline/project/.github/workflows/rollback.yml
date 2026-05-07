@@ -1,0 +1,246 @@
+# =============================================================================
+# Manual Rollback Workflow — Module 09
+#
+# Purpose: Roll back a deployment to a specific previous commit.
+# This workflow is triggered MANUALLY ONLY — never automated.
+#
+# When to use:
+#   - A deployment introduced a bug caught in production
+#   - A health check failed after deployment
+#   - Customer-reported critical issue traced to a recent release
+#
+# How it works (conceptually):
+#   1. Operator provides: target environment, commit SHA to rollback TO, and reason
+#   2. Workflow validates inputs
+#   3. Workflow simulates rolling back the deployment to the specified SHA
+#   4. Workflow notifies the team
+#
+# In a real system, the "rollback" step would:
+#   - Re-deploy the Docker image tagged with the old SHA
+#   - Or run: kubectl rollout undo deployment/my-app
+#   - Or run: aws ecs update-service --task-definition <old-revision>
+# =============================================================================
+
+name: Manual Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to roll back'
+        type: choice
+        options:
+          - staging
+          - production
+        required: true
+
+      commit_sha:
+        description: 'Commit SHA to roll back TO (the version that was working)'
+        type: string
+        required: true
+
+      reason:
+        description: 'Reason for rollback (required for audit trail)'
+        type: string
+        required: true
+
+      notify_channel:
+        description: 'Notify the team in Slack after rollback'
+        type: boolean
+        default: true
+
+jobs:
+
+  # ─── VALIDATION ───────────────────────────────────────────────────────────
+  validate-rollback:
+    name: Validate Rollback Request
+    runs-on: ubuntu-latest
+
+    outputs:
+      short_sha: ${{ steps.validate.outputs.short_sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        id: validate
+        run: |
+          COMMIT_SHA="${{ inputs.commit_sha }}"
+          ENV="${{ inputs.environment }}"
+          REASON="${{ inputs.reason }}"
+
+          echo "Validating rollback request..."
+          echo ""
+          echo "  Environment: $ENV"
+          echo "  Target SHA:  $COMMIT_SHA"
+          echo "  Reason:      $REASON"
+          echo "  Requested by: ${{ github.actor }}"
+          echo ""
+
+          # Validate SHA format (must be 7-40 hex characters)
+          if [[ ! "$COMMIT_SHA" =~ ^[0-9a-f]{7,40}$ ]]; then
+            echo "ERROR: '$COMMIT_SHA' is not a valid commit SHA"
+            echo "Expected: 7-40 hexadecimal characters (e.g., a3f8c2d or full SHA)"
+            exit 1
+          fi
+
+          # Validate reason is not too short
+          if [ ${#REASON} -lt 10 ]; then
+            echo "ERROR: Rollback reason must be at least 10 characters"
+            echo "Please provide a meaningful reason for the audit trail"
+            exit 1
+          fi
+
+          # Set short SHA for display
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+          echo "Validation passed!"
+          echo "Rolling back $ENV to commit $SHORT_SHA"
+
+  # ─── PRODUCTION SAFETY CHECK ──────────────────────────────────────────────
+  # Extra step for production: print a clear warning.
+  # In a real workflow, this might send an alert to an on-call channel.
+  production-warning:
+    name: Production Rollback Warning
+    runs-on: ubuntu-latest
+    needs: validate-rollback
+    if: inputs.environment == 'production'
+
+    steps:
+      - name: Print production warning
+        run: |
+          echo "╔══════════════════════════════════════════════════╗"
+          echo "║  ⚠️  PRODUCTION ROLLBACK IN PROGRESS             ║"
+          echo "║                                                  ║"
+          echo "║  This will affect LIVE production traffic.       ║"
+          echo "║  Ensure your team is aware of this rollback.     ║"
+          echo "╚══════════════════════════════════════════════════╝"
+          echo ""
+          echo "  Rollback details:"
+          echo "    Environment: production"
+          echo "    Target SHA:  ${{ needs.validate-rollback.outputs.short_sha }}"
+          echo "    Reason:      ${{ inputs.reason }}"
+          echo "    Initiated:   ${{ github.actor }}"
+          echo "    Time:        $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+
+  # ─── ROLLBACK DEPLOYMENT ──────────────────────────────────────────────────
+  rollback:
+    name: Rollback ${{ inputs.environment }} to ${{ inputs.commit_sha }}
+    runs-on: ubuntu-latest
+    needs: [validate-rollback, production-warning]
+    # production-warning is skipped for staging — that's OK, use always() equivalent
+    if: |
+      always() &&
+      needs.validate-rollback.result == 'success' &&
+      (needs.production-warning.result == 'success' || needs.production-warning.result == 'skipped')
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so we can reference the target SHA
+
+      - name: Verify target commit exists
+        run: |
+          TARGET="${{ inputs.commit_sha }}"
+          echo "Verifying commit $TARGET exists in the repository..."
+
+          if git cat-file -e "${TARGET}^{commit}" 2>/dev/null; then
+            echo "Commit $TARGET found in repository history"
+            git log --oneline -1 "$TARGET" 2>/dev/null || echo "(Could not get commit info — short SHA may need more context)"
+          else
+            echo "WARNING: Could not verify commit $TARGET"
+            echo "This may be because it's a short SHA or the commit isn't in this checkout"
+            echo "Proceeding with rollback as inputs were validated..."
+          fi
+
+      - name: Execute rollback (simulated)
+        run: |
+          TARGET="${{ inputs.commit_sha }}"
+          ENV="${{ inputs.environment }}"
+
+          echo "════════════════════════════════════════════════"
+          echo "  EXECUTING ROLLBACK"
+          echo "════════════════════════════════════════════════"
+          echo ""
+          echo "  Environment: $ENV"
+          echo "  Rolling back to: ${TARGET:0:7}"
+          echo "  Reason: ${{ inputs.reason }}"
+          echo ""
+
+          # Simulate rollback commands based on environment
+          case "$ENV" in
+            staging)
+              echo "  [SIMULATED] Pulling image: my-app:${TARGET:0:7}"
+              echo "  [SIMULATED] kubectl set image deployment/my-app-staging \\"
+              echo "                app=my-registry/my-app:${TARGET:0:7}"
+              echo "  [SIMULATED] kubectl rollout status deployment/my-app-staging"
+              ;;
+            production)
+              echo "  [SIMULATED] Pulling image: my-app:${TARGET:0:7}"
+              echo "  [SIMULATED] kubectl set image deployment/my-app-production \\"
+              echo "                app=my-registry/my-app:${TARGET:0:7}"
+              echo "  [SIMULATED] kubectl rollout status deployment/my-app-production"
+              ;;
+          esac
+
+          echo ""
+          echo "  Rollback complete!"
+
+      - name: Post-rollback health check
+        run: |
+          echo "Running post-rollback health check..."
+          # In a real workflow:
+          # HEALTH=$(curl -s -o /dev/null -w "%{http_code}" https://your-app.com/health)
+          # if [ "$HEALTH" != "200" ]; then
+          #   echo "CRITICAL: Health check failed after rollback!"
+          #   exit 1
+          # fi
+          echo "  [SIMULATED] GET /health → 200 OK"
+          echo "  Health check passed — rollback successful"
+
+  # ─── NOTIFICATION ─────────────────────────────────────────────────────────
+  notify:
+    name: Notify Team
+    runs-on: ubuntu-latest
+    needs: [validate-rollback, rollback]
+    if: always()
+
+    steps:
+      - name: Send rollback notification
+        run: |
+          ROLLBACK_RESULT="${{ needs.rollback.result }}"
+
+          echo "Sending rollback notification..."
+          echo ""
+          if [ "$ROLLBACK_RESULT" == "success" ]; then
+            STATUS_EMOJI="✅"
+            STATUS_TEXT="COMPLETED SUCCESSFULLY"
+          else
+            STATUS_EMOJI="❌"
+            STATUS_TEXT="FAILED"
+          fi
+
+          echo "  Notification message:"
+          echo "  ─────────────────────────────────────────"
+          echo "  $STATUS_EMOJI ROLLBACK $STATUS_TEXT"
+          echo ""
+          echo "  Environment: ${{ inputs.environment }}"
+          echo "  Rolled back to: ${{ needs.validate-rollback.outputs.short_sha }}"
+          echo "  Reason: ${{ inputs.reason }}"
+          echo "  Executed by: ${{ github.actor }}"
+          echo "  Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "  Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "  ─────────────────────────────────────────"
+
+          if [ "${{ inputs.notify_channel }}" == "true" ]; then
+            echo ""
+            echo "  [SIMULATED] Sending to #deployments Slack channel..."
+            # Real implementation:
+            # curl -X POST "${{ secrets.SLACK_WEBHOOK }}" \
+            #   -H 'Content-type: application/json' \
+            #   --data "{\"text\":\"$STATUS_EMOJI Rollback $STATUS_TEXT: ${{ inputs.environment }} → ${{ needs.validate-rollback.outputs.short_sha }}\"}"
+          fi

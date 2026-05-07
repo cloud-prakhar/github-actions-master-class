@@ -1,0 +1,124 @@
+# ============================================================
+# YAML Example 02: Data Types
+# ============================================================
+# YAML automatically infers types from values.
+# This "implicit typing" is powerful but can surprise you.
+# Always quote values that should stay as strings!
+# ============================================================
+
+# ─── STRINGS ─────────────────────────────────────────────────────
+
+strings:
+  # Unquoted — simplest form, works when no special characters
+  plain: Hello World
+  with_spaces: This is a string with spaces
+
+  # Single-quoted — no escape sequences, everything is literal
+  single_quoted: 'Hello\nWorld'         # \n is literal, NOT a newline
+  no_escapes: 'Can''t stop won''t stop' # use '' to embed a single quote
+
+  # Double-quoted — escape sequences work
+  double_quoted: "Hello\nWorld"         # \n IS a real newline character
+  tab_in_string: "Column1\tColumn2"     # \t is a real tab
+  unicode: "Café"                  # unicode escape → Café
+
+  # Strings that look like other types — MUST be quoted!
+  looks_like_bool_true: "true"
+  looks_like_bool_false: "false"
+  looks_like_bool_yes: "yes"
+  looks_like_bool_no: "no"
+  looks_like_bool_on: "on"
+  looks_like_bool_off: "off"
+  looks_like_null: "null"
+  looks_like_int: "42"
+  looks_like_float: "3.14"
+  version_number: "1.0.0"              # must quote, or 1.0.0 might error
+
+# ─── INTEGERS ────────────────────────────────────────────────────
+
+integers:
+  decimal: 42
+  negative: -7
+  zero: 0
+  port: 8080
+  max_retries: 3
+
+  # Other bases (less common but valid YAML)
+  octal: 0o17         # 0o prefix for octal → decimal 15
+  hex: 0xFF           # 0x prefix for hex → decimal 255
+  binary: 0b1010      # 0b prefix for binary → decimal 10
+
+# ─── FLOATS ──────────────────────────────────────────────────────
+
+floats:
+  pi: 3.14159
+  negative: -2.5
+  scientific: 1.5e10
+  scientific_neg: 2.3e-4
+  infinity: .inf
+  negative_infinity: -.inf
+  not_a_number: .nan
+
+# ─── BOOLEANS ────────────────────────────────────────────────────
+
+# In YAML 1.1 (used by most tools), ALL of these are valid booleans.
+# In YAML 1.2, only true/false/True/False/TRUE/FALSE are booleans.
+# GitHub Actions uses a YAML 1.1 parser — be careful with yes/no/on/off!
+
+booleans:
+  # TRUE values
+  flag_true: true
+  flag_True: True
+  flag_TRUE: TRUE
+  flag_yes: yes           # also true in YAML 1.1
+  flag_Yes: Yes           # also true in YAML 1.1
+  flag_on: on             # also true in YAML 1.1 — WARNING: 'on' is also a GH Actions key!
+
+  # FALSE values
+  flag_false: false
+  flag_False: False
+  flag_FALSE: FALSE
+  flag_no: no             # also false in YAML 1.1
+  flag_No: No             # also false in YAML 1.1
+  flag_off: off           # also false in YAML 1.1
+
+# ─── NULL ────────────────────────────────────────────────────────
+
+nulls:
+  explicit_null: null
+  tilde_null: ~
+  empty_value:            # no value = null
+
+# ─── DATES ───────────────────────────────────────────────────────
+
+dates:
+  date: 2024-01-15                  # ISO 8601 date — parsed as date object
+  datetime: 2024-01-15T10:30:00Z   # ISO 8601 datetime
+  date_as_string: "2024-01-15"     # quoted = stays as string
+
+# ─── PRACTICAL EXAMPLES ──────────────────────────────────────────
+# These show what a config file might look like for a CI/CD system
+
+server_config:
+  host: api.example.com
+  port: 8443                         # integer
+  ssl_enabled: true                  # boolean
+  timeout_seconds: 30                # integer
+  retry_count: 3                     # integer
+  version: "2.1"                     # QUOTED — keep as string
+  debug_mode: false                  # boolean
+  allowed_origins:
+    - "https://app.example.com"
+    - "https://staging.example.com"
+  rate_limit_rpm: 1000               # integer
+  api_path: "/api/v2"                # starts with / — quote to be safe
+
+# ─── TYPE PITFALLS SUMMARY ───────────────────────────────────────
+
+pitfalls:
+  # These values look harmless but are NOT strings without quotes:
+  country_code_no: no           # boolean false! Should be: "no"
+  toggle_on: on                 # boolean true! Should be: "on"
+  null_host: null               # null! Should be: "null" if you want the word
+  version_10: 1.0               # float 1.0, not string "1.0"
+  flag: yes                     # boolean true, not string "yes"

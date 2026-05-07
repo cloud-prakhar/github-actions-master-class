@@ -1,0 +1,213 @@
+# ============================================================
+# YAML Example 06: GitHub Actions Workflow — Fully Annotated
+# ============================================================
+# This file is a TEACHING REFERENCE, not meant to run as-is.
+# Every structural element is labeled and explained.
+# Study this before writing your first real workflow.
+# ============================================================
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │ WORKFLOW NAME                                                │
+# │ The human-readable name shown in the GitHub Actions UI.     │
+# │ Optional but strongly recommended.                          │
+# └─────────────────────────────────────────────────────────────┘
+name: Annotated Workflow Example
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │ TRIGGERS (on:)                                               │
+# │ Defines WHAT events cause this workflow to run.             │
+# │ "on" is a YAML boolean trap! GitHub Actions handles this    │
+# │ by treating it as a special key at the document root.       │
+# └─────────────────────────────────────────────────────────────┘
+on:                          # <── TRIGGER BLOCK (mapping value)
+
+  push:                      # <── EVENT TYPE: push
+    branches:                # <── FILTER: only these branches
+      - main                 # <── list item: branch name
+      - develop
+    paths:                   # <── FILTER: only when these paths change
+      - 'src/**'
+      - 'package*.json'
+
+  pull_request:              # <── EVENT TYPE: pull_request
+    branches:
+      - main
+    types:                   # <── ACTIVITY TYPES for this event
+      - opened
+      - synchronize
+      - reopened
+
+  schedule:                  # <── EVENT TYPE: cron schedule
+    - cron: '0 6 * * 1-5'   # <── POSIX cron: 6AM UTC, Mon-Fri
+
+  workflow_dispatch:         # <── EVENT TYPE: manual trigger from UI
+    inputs:                  # <── USER-PROVIDED INPUTS
+      environment:           # <── INPUT NAME
+        description: 'Target deployment environment'
+        type: choice         # <── INPUT TYPE: choice dropdown
+        options:
+          - dev
+          - staging
+          - production
+        required: true
+        default: dev
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │ WORKFLOW-LEVEL ENVIRONMENT VARIABLES                         │
+# │ Available to ALL jobs and steps in this workflow.            │
+# └─────────────────────────────────────────────────────────────┘
+env:
+  APP_NAME: my-application
+  NODE_VERSION: '20'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │ PERMISSIONS                                                  │
+# │ Restricts what GITHUB_TOKEN is allowed to do.               │
+# │ Principle of least privilege: only grant what you need.     │
+# └─────────────────────────────────────────────────────────────┘
+permissions:
+  contents: read
+  pull-requests: write
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │ CONCURRENCY                                                  │
+# │ Prevents multiple instances of the same workflow from        │
+# │ running simultaneously for the same branch/PR.              │
+# └─────────────────────────────────────────────────────────────┘
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}  # <── group key (expression)
+  cancel-in-progress: true                          # <── cancel older runs
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │ JOBS                                                         │
+# │ The jobs: key contains ALL jobs for this workflow.           │
+# │ By default, jobs run IN PARALLEL.                           │
+# └─────────────────────────────────────────────────────────────┘
+jobs:
+
+  # ┌───────────────────────────────────────────────────────────┐
+  # │ JOB: build                                                 │
+  # │ Job ID: "build" — used to reference this job elsewhere.   │
+  # │ Job IDs must be unique, no spaces, use hyphens.           │
+  # └───────────────────────────────────────────────────────────┘
+  build:                       # <── JOB ID
+
+    name: Build Application    # <── DISPLAY NAME (optional, shown in UI)
+
+    runs-on: ubuntu-latest     # <── RUNNER: which machine to use
+    #  Options: ubuntu-latest, ubuntu-22.04, windows-latest,
+    #           macos-latest, macos-14, self-hosted
+
+    timeout-minutes: 15        # <── TIMEOUT: fail after 15 minutes
+
+    env:                       # <── JOB-LEVEL ENV VARS (override workflow-level)
+      NODE_ENV: production
+
+    outputs:                   # <── JOB OUTPUTS: values to pass to downstream jobs
+      build-version: ${{ steps.get-version.outputs.version }}
+
+    steps:                     # <── STEPS LIST (sequential, same runner)
+
+      # ─── STEP TYPE 1: ACTION (uses:) ─────────────────────────
+      - name: Checkout repository         # <── STEP NAME (shown in logs)
+        uses: actions/checkout@v4         # <── ACTION to run (owner/repo@version)
+        with:                             # <── ACTION INPUTS
+          fetch-depth: 0                  # <── input name: input value
+
+      # ─── STEP TYPE 2: ACTION WITH ID ─────────────────────────
+      - name: Setup Node.js
+        id: setup-node                    # <── STEP ID: reference with steps.setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}   # <── using env context
+          cache: 'npm'
+
+      # ─── STEP TYPE 3: SHELL COMMAND (run:) ───────────────────
+      - name: Install dependencies
+        run: npm ci                       # <── single shell command
+
+      # ─── STEP TYPE 4: MULTI-LINE SHELL COMMAND ───────────────
+      - name: Lint and test
+        run: |                            # <── | literal block scalar
+          echo "Running lint..."
+          npm run lint
+          echo "Running tests..."
+          npm test
+
+      # ─── STEP TYPE 5: STEP WITH ENV VARS ─────────────────────
+      - name: Build with environment
+        run: npm run build
+        env:                              # <── STEP-LEVEL ENV (overrides job and workflow)
+          BUILD_ENV: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+
+      # ─── STEP TYPE 6: STEP WITH OUTPUT ───────────────────────
+      - name: Get version
+        id: get-version                   # <── ID needed to reference the output
+        run: echo "version=1.2.3" >> $GITHUB_OUTPUT
+        # GITHUB_OUTPUT is a special file; anything written as "key=value"
+        # becomes available as: steps.get-version.outputs.version
+
+      # ─── STEP TYPE 7: CONDITIONAL STEP ───────────────────────
+      - name: Deploy (main branch only)
+        if: github.ref == 'refs/heads/main'   # <── CONDITION: skip unless main
+        run: echo "Deploying to production..."
+
+      # ─── STEP TYPE 8: ALWAYS-RUN STEP ────────────────────────
+      - name: Cleanup
+        if: always()                      # <── runs even if previous steps failed
+        run: echo "Cleaning up..."
+
+      # ─── STEP TYPE 9: CONTINUE ON ERROR ──────────────────────
+      - name: Optional check
+        continue-on-error: true           # <── don't fail the job if this step fails
+        run: npm run optional-check
+
+      # ─── STEP TYPE 10: CUSTOM SHELL ──────────────────────────
+      - name: Run Python script
+        shell: python                     # <── override default shell (bash)
+        run: |
+          print("Hello from Python!")
+          import sys
+          print(f"Python version: {sys.version}")
+
+  # ┌───────────────────────────────────────────────────────────┐
+  # │ JOB: test                                                  │
+  # │ This job has a dependency on "build" via needs:            │
+  # │ It WAITS for build to succeed before starting.            │
+  # └───────────────────────────────────────────────────────────┘
+  test:
+    name: Run Tests
+    needs: build                          # <── DEPENDENCY: wait for build job
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Access the build job's output:
+      - name: Print build version
+        run: echo "Testing version ${{ needs.build.outputs.build-version }}"
+        # needs.<job-id>.outputs.<output-name>
+
+      - name: Run integration tests
+        run: npm run test:integration
+
+  # ┌───────────────────────────────────────────────────────────┐
+  # │ JOB: deploy                                                │
+  # │ Uses a GitHub Environment for protection rules.           │
+  # └───────────────────────────────────────────────────────────┘
+  deploy:
+    name: Deploy
+    needs: [build, test]                  # <── MULTIPLE DEPENDENCIES (both must pass)
+    runs-on: ubuntu-latest
+    environment: production               # <── ENVIRONMENT: enables protection rules
+    if: github.ref == 'refs/heads/main'   # <── JOB-LEVEL CONDITION
+
+    steps:
+      - name: Deploy application
+        run: |
+          echo "Deploying version ${{ needs.build.outputs.build-version }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Run ID: ${{ github.run_id }}"
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}   # <── SECRET REFERENCE

@@ -1,0 +1,232 @@
+# =============================================================================
+# Fan-Out / Fan-In Pattern — Module 07
+#
+# Pattern:
+#   setup ──┬─→ test-unit         ─┐
+#           ├─→ test-integration   ├─→ report
+#           └─→ test-e2e          ─┘
+#
+# Fan-out: One job (setup) triggers multiple parallel jobs.
+# Fan-in:  Multiple jobs converge into one final job (report).
+#
+# This pattern is ideal for running different test suites in parallel
+# and then aggregating results.
+# =============================================================================
+
+name: Fan-Out / Fan-In Pattern
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+
+  # ─── SETUP (triggers the fan-out) ─────────────────────────────────────────
+  setup:
+    name: Setup & Configuration
+    runs-on: ubuntu-latest
+
+    outputs:
+      config: ${{ steps.config.outputs.value }}
+      test_data_ready: ${{ steps.prep.outputs.ready }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate test configuration
+        id: config
+        run: |
+          # In a real project, this might:
+          # - Read configuration from a file
+          # - Query a database for test data
+          # - Generate a test matrix
+          CONFIG="{\"timeout\": 30, \"retries\": 2, \"env\": \"test\"}"
+          echo "value=$CONFIG" >> $GITHUB_OUTPUT
+          echo "Config: $CONFIG"
+
+      - name: Prepare test data
+        id: prep
+        run: |
+          echo "Preparing shared test fixtures..."
+          mkdir -p test-fixtures
+          echo "test_data=ready_$(date +%s)" > test-fixtures/data.txt
+          echo "ready=true" >> $GITHUB_OUTPUT
+
+      - name: Upload shared test fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-fixtures
+          path: test-fixtures/
+          retention-days: 1
+
+  # ─── TEST UNIT (fan-out #1) ────────────────────────────────────────────────
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: setup              # ALL three test jobs wait for setup
+
+    outputs:
+      passed: ${{ steps.run-tests.outputs.passed }}
+      count: ${{ steps.run-tests.outputs.count }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download test fixtures
+        uses: actions/download-artifact@v4
+        with:
+          name: test-fixtures
+          path: ./test-fixtures
+
+      - name: Print configuration from setup
+        run: |
+          echo "Using config: ${{ needs.setup.outputs.config }}"
+          echo "Test data: $(cat test-fixtures/data.txt)"
+
+      - name: Run unit tests
+        id: run-tests
+        run: |
+          echo "Running unit tests..."
+          pip install pytest --quiet
+          # Simulated results
+          echo "PASSED test_models.py::test_user_create"
+          echo "PASSED test_models.py::test_user_update"
+          echo "PASSED test_services.py::test_auth"
+          echo "PASSED test_utils.py::test_hash"
+          echo ""
+          echo "4 unit tests passed"
+          echo "passed=true" >> $GITHUB_OUTPUT
+          echo "count=4" >> $GITHUB_OUTPUT
+
+  # ─── TEST INTEGRATION (fan-out #2) ────────────────────────────────────────
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: setup              # also waits for setup
+
+    outputs:
+      passed: ${{ steps.run-tests.outputs.passed }}
+      count: ${{ steps.run-tests.outputs.count }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Run integration tests
+        id: run-tests
+        run: |
+          echo "Running integration tests..."
+          # Simulated results
+          echo "PASSED test_api.py::test_create_user_endpoint"
+          echo "PASSED test_api.py::test_login_endpoint"
+          echo "PASSED test_api.py::test_logout_endpoint"
+          echo ""
+          echo "3 integration tests passed"
+          echo "passed=true" >> $GITHUB_OUTPUT
+          echo "count=3" >> $GITHUB_OUTPUT
+
+  # ─── TEST E2E (fan-out #3) ────────────────────────────────────────────────
+  test-e2e:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: setup              # also waits for setup
+
+    outputs:
+      passed: ${{ steps.run-tests.outputs.passed }}
+      count: ${{ steps.run-tests.outputs.count }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Run E2E tests
+        id: run-tests
+        run: |
+          echo "Running end-to-end tests..."
+          # Simulated results
+          echo "PASSED test_e2e.py::test_user_registration_flow"
+          echo "PASSED test_e2e.py::test_product_purchase_flow"
+          echo ""
+          echo "2 E2E tests passed"
+          echo "passed=true" >> $GITHUB_OUTPUT
+          echo "count=2" >> $GITHUB_OUTPUT
+
+  # ─── REPORT (fan-in) ──────────────────────────────────────────────────────
+  # The fan-in job: waits for ALL three test jobs before running.
+  # Aggregates results from all test jobs.
+  report:
+    name: Test Report (Fan-In)
+    runs-on: ubuntu-latest
+    needs: [test-unit, test-integration, test-e2e]    # ALL THREE must finish
+    if: always()
+
+    steps:
+      - name: Aggregate test results
+        run: |
+          echo "══════════════════════════════════════════════════"
+          echo "  AGGREGATED TEST REPORT (fan-in result)"
+          echo "══════════════════════════════════════════════════"
+          echo ""
+          echo "  ── Individual Job Results ─────────────────────"
+          echo ""
+          echo "  Unit Tests:"
+          echo "    Result:  ${{ needs.test-unit.result }}"
+          echo "    Passed:  ${{ needs.test-unit.outputs.passed }}"
+          echo "    Count:   ${{ needs.test-unit.outputs.count }}"
+          echo ""
+          echo "  Integration Tests:"
+          echo "    Result:  ${{ needs.test-integration.result }}"
+          echo "    Passed:  ${{ needs.test-integration.outputs.passed }}"
+          echo "    Count:   ${{ needs.test-integration.outputs.count }}"
+          echo ""
+          echo "  E2E Tests:"
+          echo "    Result:  ${{ needs.test-e2e.result }}"
+          echo "    Passed:  ${{ needs.test-e2e.outputs.passed }}"
+          echo "    Count:   ${{ needs.test-e2e.outputs.count }}"
+          echo ""
+          echo "  ── Summary ────────────────────────────────────"
+
+          # Calculate total
+          UNIT_COUNT="${{ needs.test-unit.outputs.count }}"
+          INT_COUNT="${{ needs.test-integration.outputs.count }}"
+          E2E_COUNT="${{ needs.test-e2e.outputs.count }}"
+          TOTAL=$((UNIT_COUNT + INT_COUNT + E2E_COUNT))
+          echo "  Total tests run: $TOTAL"
+          echo ""
+
+          # Determine overall pass/fail
+          if [[ "${{ needs.test-unit.result }}"        == "success" ]] && \
+             [[ "${{ needs.test-integration.result }}" == "success" ]] && \
+             [[ "${{ needs.test-e2e.result }}"         == "success" ]]; then
+            echo "  OVERALL: ✅ ALL TESTS PASSED ($TOTAL tests)"
+          else
+            echo "  OVERALL: ❌ SOME TESTS FAILED"
+            echo ""
+            echo "  Failed jobs:"
+            [[ "${{ needs.test-unit.result }}" != "success" ]] && echo "    - Unit tests"
+            [[ "${{ needs.test-integration.result }}" != "success" ]] && echo "    - Integration tests"
+            [[ "${{ needs.test-e2e.result }}" != "success" ]] && echo "    - E2E tests"
+            exit 1
+          fi
+          echo "══════════════════════════════════════════════════"

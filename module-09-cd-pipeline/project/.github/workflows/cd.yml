@@ -1,0 +1,959 @@
+# =============================================================================
+# CD Pipeline: Deploy to Staging and Production
+#
+# Module 09 — Project 7: Continuous Deployment Pipeline
+#
+# This workflow implements a complete Continuous Delivery pipeline:
+#
+#   1. build-and-push       — Build and "push" the application image/artifact
+#   2. deploy-staging       — Auto-deploy to staging environment
+#   3. integration-tests    — Run integration tests against staging
+#   4. deploy-production    — Deploy to production (requires: environment rules)
+#   5. notify               — Always-run summary and notification job
+#
+# Trigger options:
+#   - Automatic: push to main branch (full pipeline runs)
+#   - Manual:    workflow_dispatch with inputs for environment and version
+#
+# Prerequisites (set up in GitHub repository settings):
+#   Environments:
+#     - staging:    No protection rules (auto-deploys)
+#     - production: Required reviewers + main branch restriction
+#   Secrets (per environment):
+#     - DEPLOY_API_KEY: API key for your deployment platform
+#   Variables (per environment):
+#     - DEPLOY_URL: The base URL of the deployed application
+#
+# =============================================================================
+
+name: CD Pipeline
+
+# ---------------------------------------------------------------------------
+# Triggers
+#
+# Trigger 1: Push to main
+#   The main trigger. When code is merged to main and CI passes (assumed
+#   because PRs require CI), the CD pipeline runs automatically.
+#
+# Trigger 2: workflow_dispatch (manual trigger)
+#   Allows manually triggering the pipeline from the Actions UI or via the
+#   GitHub API. Useful for:
+#     - Redeploying a specific version
+#     - Deploying to a specific environment without a new commit
+#     - Recovering from a partially failed deployment
+# ---------------------------------------------------------------------------
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - staging-only      # Deploy to staging but stop before production
+          - full-pipeline     # Full pipeline: staging + integration tests + production
+        default: staging-only
+
+      version:
+        description: 'Version/tag to deploy (leave empty to use latest commit)'
+        required: false
+        type: string
+        default: ''
+
+      skip-integration-tests:
+        description: 'Skip integration tests (emergency deploys only — use with caution)'
+        required: false
+        type: boolean
+        default: false
+
+# ---------------------------------------------------------------------------
+# Concurrency
+#
+# For the production deployment group: queue deployments, never cancel one
+# that's in progress. Cancelling a mid-flight deployment risks leaving the
+# environment in a half-deployed state.
+#
+# We use the workflow name as the group key so all runs of this workflow
+# compete for the same lock.
+#
+# Note: cancel-in-progress is FALSE here. This is important!
+# For CI workflows (module 08), we used cancel-in-progress: true to avoid
+# wasting compute on outdated commits. For CD, we must NOT cancel a
+# deployment that's already in progress.
+# ---------------------------------------------------------------------------
+concurrency:
+  group: cd-pipeline-${{ github.ref }}
+  cancel-in-progress: false
+
+# ---------------------------------------------------------------------------
+# Default settings for all run steps
+# ---------------------------------------------------------------------------
+defaults:
+  run:
+    shell: bash
+
+# =============================================================================
+# SHARED ENVIRONMENT VARIABLES
+# =============================================================================
+env:
+  # The Node.js version the application is built with
+  NODE_VERSION: '20'
+
+  # The container registry URL (in a real project, e.g., ghcr.io or dockerhub)
+  # We use a placeholder here since this is a learning demo.
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+  # The image name derived from the repository name
+  IMAGE_NAME: github-actions-ci-demo
+
+# =============================================================================
+# JOBS
+# =============================================================================
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # JOB 1: BUILD AND PUSH
+  #
+  # This job simulates building a Docker image and pushing it to a container
+  # registry. In a real pipeline, this step would:
+  #   1. Run unit tests (or rely on CI having passed)
+  #   2. Build the Docker image with the commit SHA as the tag
+  #   3. Push the image to a container registry (GHCR, ECR, Docker Hub)
+  #   4. Output the image tag for downstream jobs to use
+  #
+  # For this learning demo, we simulate these steps with echo commands.
+  # The critical output is `image_tag` — the short commit SHA used to
+  # identify this specific build throughout the rest of the pipeline.
+  # ---------------------------------------------------------------------------
+  build-and-push:
+    name: Build and Push Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Declare outputs so downstream jobs can reference them.
+    # The image_tag output flows through the entire pipeline:
+    #   deploy-staging uses it to deploy the right version
+    #   deploy-production uses it to promote the exact same version from staging
+    outputs:
+      image_tag: ${{ steps.set-tag.outputs.image_tag }}
+      full_image: ${{ steps.set-tag.outputs.full_image }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: module-08-ci-pipeline/project/package-lock.json
+
+      # -----------------------------------------------------------------------
+      # Run tests before building
+      #
+      # Even though CI runs tests on every commit, it's a best practice to
+      # verify tests pass in the CD pipeline as well. This catches edge cases
+      # where CI passed on a different commit than what's being deployed,
+      # or where CI was bypassed.
+      #
+      # In a real pipeline, you might skip this if CI status is a prerequisite
+      # for the CD trigger (e.g., workflow_run: {workflows: ["CI Pipeline"]})
+      # -----------------------------------------------------------------------
+      - name: Install dependencies and run tests
+        working-directory: module-08-ci-pipeline/project
+        run: |
+          npm ci --no-fund --no-audit
+          echo "Running test suite before building..."
+          npm test
+          echo "All tests passed — proceeding with build"
+
+      # -----------------------------------------------------------------------
+      # Determine the image tag
+      #
+      # We use the first 8 characters of the git commit SHA as the image tag.
+      # This provides:
+      #   - Uniqueness: Every commit produces a unique tag
+      #   - Traceability: You can always find the source commit from the tag
+      #   - Immutability: The same image tag always refers to the same code
+      #
+      # If workflow_dispatch specified a version, use that instead.
+      # -----------------------------------------------------------------------
+      - name: Determine image tag
+        id: set-tag
+        run: |
+          # Use manually specified version if provided, otherwise use short SHA
+          if [[ -n "${{ inputs.version }}" ]]; then
+            IMAGE_TAG="${{ inputs.version }}"
+            echo "Using manually specified version: ${IMAGE_TAG}"
+          else
+            # Short SHA: first 8 characters of the full commit SHA
+            IMAGE_TAG=$(echo "${{ github.sha }}" | cut -c1-8)
+            echo "Using commit SHA as version: ${IMAGE_TAG}"
+          fi
+
+          FULL_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
+
+          # Write outputs to GITHUB_OUTPUT
+          # These are accessible in downstream jobs via needs.build-and-push.outputs
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "full_image=${FULL_IMAGE}" >> "$GITHUB_OUTPUT"
+
+          echo "Image tag: ${IMAGE_TAG}"
+          echo "Full image reference: ${FULL_IMAGE}"
+
+      # -----------------------------------------------------------------------
+      # Simulate Docker build
+      #
+      # In a real pipeline, this would be:
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: .
+      #     push: true
+      #     tags: ${{ steps.set-tag.outputs.full_image }}
+      #
+      # We simulate it here because we can't push to a real registry in
+      # this demo. The echo commands represent what would actually happen.
+      # -----------------------------------------------------------------------
+      - name: Simulate Docker build
+        run: |
+          echo "========================================================"
+          echo "  SIMULATED: docker build"
+          echo "========================================================"
+          echo ""
+          echo "  Building image: ${{ steps.set-tag.outputs.full_image }}"
+          echo "  Build context: module-08-ci-pipeline/project/"
+          echo "  Node.js base image: node:${{ env.NODE_VERSION }}-alpine"
+          echo ""
+          echo "  Build steps (simulated):"
+          echo "    ✓ FROM node:${{ env.NODE_VERSION }}-alpine"
+          echo "    ✓ WORKDIR /app"
+          echo "    ✓ COPY package*.json ./"
+          echo "    ✓ RUN npm ci --only=production"
+          echo "    ✓ COPY src/ ./src/"
+          echo "    ✓ EXPOSE 3000"
+          echo "    ✓ CMD [\"node\", \"src/server.js\"]"
+          echo ""
+          echo "  Image built successfully."
+          echo ""
+
+      - name: Simulate Docker push
+        run: |
+          echo "========================================================"
+          echo "  SIMULATED: docker push"
+          echo "========================================================"
+          echo ""
+          echo "  Pushing: ${{ steps.set-tag.outputs.full_image }}"
+          echo ""
+          echo "  In a real pipeline, this would require:"
+          echo "    - docker/login-action@v3 with registry credentials"
+          echo "    - docker/build-push-action@v5 with push: true"
+          echo "    - Container registry configured in repository/environment settings"
+          echo ""
+          echo "  Image pushed successfully (simulated)."
+          echo "  Downstream jobs will deploy: ${{ steps.set-tag.outputs.image_tag }}"
+          echo ""
+
+      # -----------------------------------------------------------------------
+      # Print build summary
+      #
+      # Writing to $GITHUB_STEP_SUMMARY creates a Markdown summary visible
+      # in the workflow run's summary page. This is useful for at-a-glance
+      # build information without reading through all the logs.
+      # -----------------------------------------------------------------------
+      - name: Write build summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## Build and Push Summary
+
+          | Field | Value |
+          |-------|-------|
+          | Image Tag | \`${{ steps.set-tag.outputs.image_tag }}\` |
+          | Full Image | \`${{ steps.set-tag.outputs.full_image }}\` |
+          | Commit | \`${{ github.sha }}\` |
+          | Branch | \`${{ github.ref_name }}\` |
+          | Triggered By | ${{ github.actor }} |
+          | Trigger Event | ${{ github.event_name }} |
+
+          **Status:** Build and push completed successfully.
+          EOF
+
+  # ---------------------------------------------------------------------------
+  # JOB 2: DEPLOY TO STAGING
+  #
+  # Deploys the freshly built image to the staging environment.
+  #
+  # Key concepts demonstrated:
+  #
+  # 1. `environment: staging` — This job is associated with the staging
+  #    GitHub Environment. This means:
+  #    - Staging environment secrets are available (secrets.DEPLOY_API_KEY)
+  #    - Staging environment variables are available (vars.DEPLOY_URL)
+  #    - A deployment record is created in GitHub's Deployments panel
+  #    - The deployment URL is shown on PRs and the commit status
+  #
+  # 2. Simulated deployment — In a real pipeline, this step would run
+  #    a deployment command specific to your infrastructure:
+  #    - kubectl set image deployment/app app=IMAGE_TAG (Kubernetes)
+  #    - aws ecs update-service --task-definition ... (AWS ECS)
+  #    - heroku container:push web (Heroku)
+  #    - terraform apply (infrastructure-as-code)
+  #
+  # 3. Health check — After deployment, we verify the app is responding
+  #    before declaring success. A failed health check fails this job.
+  #
+  # 4. Output URL — We output the staging URL so integration-tests can
+  #    run against the correct target.
+  # ---------------------------------------------------------------------------
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    timeout-minutes: 15
+
+    # Associate this job with the staging GitHub Environment.
+    # - Secrets scoped to 'staging' environment will be injected
+    # - A deployment record is created tracking this commit to staging
+    # - The url field provides a clickable link in the GitHub UI
+    environment:
+      name: staging
+      url: https://staging.github-actions-demo.example.com
+
+    outputs:
+      staging_url: ${{ steps.set-url.outputs.staging_url }}
+      deployed_tag: ${{ needs.build-and-push.outputs.image_tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # In a real workflow, you'd configure cloud credentials here.
+      # For example, for AWS:
+      #
+      #   - name: Configure AWS credentials
+      #     uses: aws-actions/configure-aws-credentials@v4
+      #     with:
+      #       role-to-assume: ${{ secrets.AWS_STAGING_ROLE_ARN }}
+      #       aws-region: us-east-1
+      #
+      # For this demo, we simulate it with a placeholder step.
+      # -----------------------------------------------------------------------
+      - name: Configure deployment credentials
+        run: |
+          echo "Configuring deployment credentials for staging..."
+          echo "  (In production: would configure AWS/GCP/Azure credentials)"
+          echo "  (Using environment secret: DEPLOY_API_KEY)"
+          # DEPLOY_API_KEY is a staging environment secret
+          # We reference it to verify it's available but don't print it
+          if [[ -n "${{ secrets.DEPLOY_API_KEY }}" ]]; then
+            echo "  Deployment credentials: available"
+          else
+            echo "  Deployment credentials: not configured (demo mode — proceeding anyway)"
+          fi
+
+      # -----------------------------------------------------------------------
+      # Simulate staging deployment
+      #
+      # In a real workflow, replace this with your actual deployment command.
+      # The IMAGE_TAG from the build job identifies exactly what to deploy.
+      # -----------------------------------------------------------------------
+      - name: Deploy to staging
+        id: deploy
+        run: |
+          IMAGE_TAG="${{ needs.build-and-push.outputs.image_tag }}"
+          echo "========================================================"
+          echo "  DEPLOYING TO STAGING"
+          echo "========================================================"
+          echo ""
+          echo "  Environment:  staging"
+          echo "  Image tag:    ${IMAGE_TAG}"
+          echo "  Full image:   ${{ needs.build-and-push.outputs.full_image }}"
+          echo "  Deploy time:  $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+          echo "  Simulating deployment steps:"
+          echo "    1. Pulling image ${IMAGE_TAG} from registry..."
+          echo "    2. Stopping current staging containers..."
+          echo "    3. Starting new containers with image ${IMAGE_TAG}..."
+          echo "    4. Waiting for containers to become ready..."
+          echo ""
+          echo "  Deployment command (what would actually run):"
+          echo "    kubectl set image deployment/app-staging app=${{ needs.build-and-push.outputs.full_image }}"
+          echo "    kubectl rollout status deployment/app-staging --timeout=300s"
+          echo ""
+          echo "  Deployment to staging complete."
+
+      # -----------------------------------------------------------------------
+      # Set the staging URL output
+      #
+      # In a real deployment, the URL might come from your infrastructure
+      # (e.g., a Kubernetes ingress URL, an AWS ALB DNS name, or a Vercel
+      # preview URL generated per-deployment).
+      #
+      # For this demo, we construct a predictable staging URL using the
+      # image tag to make it unique per deployment.
+      # -----------------------------------------------------------------------
+      - name: Set staging URL
+        id: set-url
+        run: |
+          STAGING_URL="https://staging.github-actions-demo.example.com"
+          echo "staging_url=${STAGING_URL}" >> "$GITHUB_OUTPUT"
+          echo "Staging URL: ${STAGING_URL}"
+
+      # -----------------------------------------------------------------------
+      # Health check after deployment
+      #
+      # Never declare victory before verifying the deployment is actually
+      # serving traffic. This health check:
+      #   1. Waits for the app to start (with retry logic)
+      #   2. Calls the /health endpoint
+      #   3. Verifies the HTTP status code is 200
+      #   4. Fails the job if health check doesn't pass within the timeout
+      #
+      # If this step fails, deploy-staging fails, and deploy-production
+      # will NOT run (because it needs: integration-tests which needs: deploy-staging).
+      # This prevents bad code from reaching production.
+      # -----------------------------------------------------------------------
+      - name: Health check on staging
+        run: |
+          STAGING_URL="${{ steps.set-url.outputs.staging_url }}"
+          echo "========================================================"
+          echo "  STAGING HEALTH CHECK"
+          echo "========================================================"
+          echo ""
+          echo "  Checking: ${STAGING_URL}/health"
+          echo ""
+
+          # Simulate health check with retry logic
+          # In reality: curl -f --retry 12 --retry-delay 10 "${STAGING_URL}/health"
+          for i in {1..3}; do
+            echo "  Attempt ${i}/3: Checking health endpoint..."
+            # Simulate: sometimes the first check might need a moment
+            if [ "$i" -eq 1 ]; then
+              echo "    Status: 200 OK"
+              echo "    Response: {\"status\":\"ok\",\"version\":\"${{ needs.build-and-push.outputs.image_tag }}\"}"
+              echo ""
+              echo "  Health check passed on attempt ${i}"
+              break
+            fi
+          done
+
+          echo "  Staging deployment is healthy and serving traffic."
+          echo ""
+
+      - name: Print staging deployment summary
+        run: |
+          echo ""
+          echo "  ✓ Staging Deployment Complete"
+          echo "    URL: ${{ steps.set-url.outputs.staging_url }}"
+          echo "    Version: ${{ needs.build-and-push.outputs.image_tag }}"
+          echo "    Commit: ${{ github.sha }}"
+          echo ""
+
+  # ---------------------------------------------------------------------------
+  # JOB 3: INTEGRATION TESTS
+  #
+  # Run integration tests against the live staging environment.
+  #
+  # Why run integration tests here and not in CI?
+  #   - CI runs unit tests against the code in isolation (no real database, no
+  #     real HTTP server, mocked dependencies)
+  #   - Integration tests run against the fully deployed application: real
+  #     database, real HTTP endpoints, realistic data flows
+  #   - They catch bugs that unit tests can't: configuration errors, database
+  #     migration issues, environment-specific bugs, API contract violations
+  #
+  # These tests are a gate before production. If they fail:
+  #   - deploy-production will NOT run
+  #   - The staging environment gets the bad version, but production is protected
+  #   - Developers investigate and fix before the next deployment attempt
+  # ---------------------------------------------------------------------------
+  integration-tests:
+    name: Integration Tests (Staging)
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    timeout-minutes: 20
+
+    # Skip integration tests if the manual trigger specified to skip them.
+    # This is the "emergency deploy" escape hatch — use with extreme caution.
+    # Skipping tests means you're deploying code you haven't validated on staging.
+    if: ${{ !inputs.skip-integration-tests }}
+
+    outputs:
+      tests_passed: ${{ steps.run-tests.outputs.tests_passed }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: module-08-ci-pipeline/project/package-lock.json
+
+      - name: Install dependencies
+        working-directory: module-08-ci-pipeline/project
+        run: npm ci --no-fund --no-audit
+
+      # -----------------------------------------------------------------------
+      # Simulate integration tests against staging
+      #
+      # In a real pipeline, this would run a separate integration test suite
+      # (not the unit tests) that makes actual HTTP calls to the staging URL.
+      #
+      # Example real integration test command:
+      #   STAGING_URL="${{ needs.deploy-staging.outputs.staging_url }}" \
+      #   npm run test:integration
+      #
+      # Or using a dedicated API testing tool like:
+      #   newman run postman-collection.json --env-var "baseUrl=$STAGING_URL"
+      # -----------------------------------------------------------------------
+      - name: Run integration tests against staging
+        id: run-tests
+        run: |
+          STAGING_URL="${{ needs.deploy-staging.outputs.staging_url }}"
+          echo "========================================================"
+          echo "  INTEGRATION TESTS"
+          echo "========================================================"
+          echo ""
+          echo "  Target: ${STAGING_URL}"
+          echo "  Version: ${{ needs.deploy-staging.outputs.deployed_tag }}"
+          echo ""
+          echo "  Test Suite: API Contract Tests"
+          echo "  ─────────────────────────────────────────────────────"
+
+          # Simulate individual test cases
+          echo ""
+          echo "  Running: GET /health"
+          echo "    Expected: 200 { status: 'ok' }"
+          echo "    Result:   PASS"
+          echo ""
+          echo "  Running: GET /hello"
+          echo "    Expected: 200 { message: 'Hello, World!' }"
+          echo "    Result:   PASS"
+          echo ""
+          echo "  Running: GET /add?a=5&b=3"
+          echo "    Expected: 200 { result: 8 }"
+          echo "    Result:   PASS"
+          echo ""
+          echo "  Running: GET /add (missing params)"
+          echo "    Expected: 400 { error: '...' }"
+          echo "    Result:   PASS"
+          echo ""
+          echo "  Running: POST /users (create user flow)"
+          echo "    Expected: 201 with user object"
+          echo "    Result:   PASS (simulated)"
+          echo ""
+          echo "  Running: Authentication flow test"
+          echo "    Expected: JWT token returned, subsequent requests authenticated"
+          echo "    Result:   PASS (simulated)"
+          echo ""
+          echo "  ─────────────────────────────────────────────────────"
+          echo "  Results: 6/6 tests passed"
+          echo ""
+
+          # Set output for downstream jobs
+          echo "tests_passed=true" >> "$GITHUB_OUTPUT"
+
+          echo "  All integration tests passed."
+          echo "  Staging is validated — safe to proceed to production."
+          echo ""
+
+  # ---------------------------------------------------------------------------
+  # JOB 4: DEPLOY TO PRODUCTION
+  #
+  # Deploy the validated image to the production environment.
+  #
+  # Key safety controls:
+  #
+  # 1. `needs: integration-tests` — Never deploys unless integration tests pass
+  #
+  # 2. `environment: production` — This is the approval gate.
+  #    If the production environment has Required Reviewers configured:
+  #    - The job pauses here and GitHub notifies the required reviewers
+  #    - No one can bypass this — not even admins pushing directly to main
+  #    - The deployment job only proceeds after an authorized reviewer approves
+  #    - Approval is logged for audit purposes
+  #
+  # 3. Branch restriction — Only runs on main branch pushes.
+  #    Prevents accidental production deploys from feature branches.
+  #
+  # 4. Conditional on deploy environment input — If someone used
+  #    workflow_dispatch with environment: staging-only, skip production.
+  # ---------------------------------------------------------------------------
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    timeout-minutes: 20
+
+    # Only deploy to production if:
+    #   1. This is a push to the main branch (not a feature branch)
+    #   2. The manual trigger (if used) didn't select staging-only
+    if: |
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || inputs.environment == 'full-pipeline')
+
+    # Associate with the production GitHub Environment.
+    #
+    # IMPORTANT FOR LEARNERS:
+    # To see the approval gate in action, configure 'production' environment
+    # in your repository settings with:
+    #   - Required reviewers: Add your GitHub username
+    #   - Deployment branches: Select "main" only
+    #
+    # When this job runs, GitHub will pause it and send you an approval request.
+    # The pipeline will wait (up to 30 days) for your approval before proceeding.
+    environment:
+      name: production
+      url: https://github-actions-demo.example.com
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Pre-deployment verification
+      #
+      # Before touching production, verify we're deploying what we think
+      # we're deploying and from the right source.
+      # -----------------------------------------------------------------------
+      - name: Pre-deployment verification
+        run: |
+          echo "========================================================"
+          echo "  PRE-DEPLOYMENT VERIFICATION"
+          echo "========================================================"
+          echo ""
+          echo "  Verifying deployment parameters..."
+          echo ""
+          echo "  Branch:         ${{ github.ref_name }}"
+          echo "  Commit:         ${{ github.sha }}"
+          echo "  Image tag:      ${{ needs.integration-tests.outputs.tests_passed && 'verified' || 'UNKNOWN' }}"
+          echo "  Integration:    tests_passed=${{ needs.integration-tests.outputs.tests_passed }}"
+          echo "  Deployed by:    ${{ github.actor }}"
+          echo "  Deploy time:    $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+
+          # Verify we're on main
+          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "  ERROR: Production deployments are only allowed from main branch."
+            echo "  Current ref: ${{ github.ref }}"
+            exit 1
+          fi
+          echo "  Branch check: PASS (deploying from main)"
+
+          # Verify integration tests passed
+          if [[ "${{ needs.integration-tests.outputs.tests_passed }}" != "true" ]]; then
+            echo "  ERROR: Integration tests did not pass. Aborting production deployment."
+            exit 1
+          fi
+          echo "  Integration test check: PASS"
+
+          echo ""
+          echo "  All pre-deployment checks passed. Proceeding with production deployment."
+
+      # -----------------------------------------------------------------------
+      # Configure production credentials
+      #
+      # Production credentials are ONLY available because this job is
+      # associated with the `production` environment. If this job were
+      # not using `environment: production`, the secrets.DEPLOY_API_KEY
+      # here would be the repository-level secret (or empty if only
+      # defined at the environment level).
+      #
+      # In a real deployment:
+      #   - Use aws-actions/configure-aws-credentials@v4 with OIDC
+      #   - Or configure kubectl with production cluster credentials
+      #   - Or use terraform with production state backend
+      # -----------------------------------------------------------------------
+      - name: Configure production credentials
+        run: |
+          echo "Configuring production deployment credentials..."
+          echo "  (Credentials from 'production' environment secrets)"
+          echo "  (In production: OIDC preferred over static keys)"
+          echo ""
+
+      # -----------------------------------------------------------------------
+      # Production deployment
+      #
+      # Critical: We deploy the SAME image that was validated on staging.
+      # This is the "promote artifact" pattern — the same binary that passed
+      # staging is deployed to production, not a freshly built one.
+      #
+      # Why does this matter? Building a fresh image for production introduces
+      # a new variable. What if the build environment changed between staging
+      # and production build? What if a dependency was updated on the registry?
+      # Promoting the exact same artifact eliminates this risk.
+      # -----------------------------------------------------------------------
+      - name: Deploy to production
+        id: deploy-prod
+        run: |
+          # Use the same image tag that was deployed to staging and passed integration tests
+          IMAGE_TAG="${{ needs.deploy-staging.outputs.deployed_tag || needs.build-and-push.outputs.image_tag }}"
+
+          echo "========================================================"
+          echo "  DEPLOYING TO PRODUCTION"
+          echo "========================================================"
+          echo ""
+          echo "  Environment:  production"
+          echo "  Image tag:    ${IMAGE_TAG}"
+          echo "  Full image:   ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
+          echo ""
+          echo "  This is the SAME image that was deployed to staging and"
+          echo "  passed all integration tests. We are PROMOTING the artifact,"
+          echo "  not building a new one."
+          echo ""
+          echo "  Simulating deployment steps:"
+          echo "    1. Verifying image ${IMAGE_TAG} is in registry..."
+          echo "    2. Creating production deployment backup point..."
+          echo "    3. Rolling out to 10% of production instances (canary)..."
+          echo "    4. Monitoring error rate for 30 seconds..."
+          echo "    5. Error rate within threshold — promoting to 100%..."
+          echo "    6. Completing rolling deployment across all instances..."
+          echo "    7. Verifying all instances are running ${IMAGE_TAG}..."
+          echo ""
+          echo "  Deployment command (what would actually run):"
+          echo "    kubectl set image deployment/app-production app=${IMAGE_TAG}"
+          echo "    kubectl rollout status deployment/app-production --timeout=600s"
+          echo ""
+          echo "  Production deployment complete."
+
+          # Record the deployed version for the notification job
+          echo "deployed_version=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      # -----------------------------------------------------------------------
+      # Production health check
+      #
+      # After deploying to production, verify the production environment
+      # is healthy before announcing success.
+      #
+      # In a real pipeline, this might:
+      # 1. Check the /health endpoint
+      # 2. Verify key business metrics in your APM tool haven't spiked
+      # 3. Run a brief smoke test of critical user journeys
+      # -----------------------------------------------------------------------
+      - name: Production health check
+        run: |
+          PROD_URL="https://github-actions-demo.example.com"
+          echo "========================================================"
+          echo "  PRODUCTION HEALTH CHECK"
+          echo "========================================================"
+          echo ""
+          echo "  Checking: ${PROD_URL}/health"
+          echo ""
+
+          for i in {1..5}; do
+            echo "  Attempt ${i}/5..."
+            # Simulate health check
+            echo "    Status: 200 OK"
+            echo "    Response: {\"status\":\"ok\",\"version\":\"${{ needs.build-and-push.outputs.image_tag }}\"}"
+            echo ""
+            echo "  Health check passed."
+            break
+          done
+
+          echo "  Production deployment is healthy."
+          echo ""
+
+      # -----------------------------------------------------------------------
+      # Print rollback instructions
+      #
+      # ALWAYS document how to roll back after a production deployment.
+      # Print the rollback command prominently in the deployment logs so
+      # any engineer can quickly find it during an incident.
+      # -----------------------------------------------------------------------
+      - name: Print rollback instructions
+        if: always()
+        run: |
+          echo ""
+          echo "========================================================"
+          echo "  ROLLBACK INSTRUCTIONS"
+          echo "========================================================"
+          echo ""
+          echo "  If this deployment causes issues, roll back by:"
+          echo ""
+          echo "  Option 1: Use the rollback workflow (preferred)"
+          echo "    Go to: Actions → Rollback Deployment → Run workflow"
+          echo "    Environment: production"
+          echo "    Commit SHA:  (previous known-good SHA)"
+          echo "    Reason:      Brief description of the issue"
+          echo ""
+          echo "  Option 2: Re-trigger the CD pipeline on a previous commit"
+          echo "    git push origin <previous-good-sha>:main --force"
+          echo "    (Note: this rewrites history — use only in emergencies)"
+          echo ""
+          echo "  Option 3: Git revert (safest for history)"
+          echo "    git revert ${{ github.sha }}"
+          echo "    git push origin main"
+          echo "    (This creates a new revert commit and triggers CD again)"
+          echo ""
+          echo "  The previous deployment SHA can be found in:"
+          echo "    GitHub → Deployments panel → production environment"
+          echo ""
+
+      - name: Write production deployment summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## Production Deployment Summary
+
+          | Field | Value |
+          |-------|-------|
+          | Status | SUCCESS |
+          | Version | \`${{ steps.deploy-prod.outputs.deployed_version }}\` |
+          | Commit | \`${{ github.sha }}\` |
+          | Deployed By | ${{ github.actor }} |
+          | Deploy Time | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
+          | Production URL | https://github-actions-demo.example.com |
+
+          ### Validation
+          - Integration tests: PASSED
+          - Health check: PASSED
+
+          ### Rollback
+          If issues arise, use the [Rollback workflow](${{ github.server_url }}/${{ github.repository }}/actions/workflows/rollback.yml).
+          EOF
+
+  # ---------------------------------------------------------------------------
+  # JOB 5: NOTIFY
+  #
+  # This job always runs (if: always()) and provides a deployment summary
+  # regardless of whether earlier jobs succeeded or failed.
+  #
+  # Why have a dedicated notification job?
+  #   - You always want to know the outcome of a deployment, pass or fail
+  #   - Centralizes notification logic (one place to update Slack, email, etc.)
+  #   - The needs context gives you the result of every upstream job
+  #   - You can tailor the notification: "staging deployed, production pending"
+  #     vs "staging failed, production not attempted"
+  # ---------------------------------------------------------------------------
+  notify:
+    name: Deployment Notification
+    runs-on: ubuntu-latest
+    needs: [build-and-push, deploy-staging, integration-tests, deploy-production]
+    if: always()    # Always run this job, even if upstream jobs failed
+    timeout-minutes: 5
+
+    steps:
+      - name: Print deployment summary
+        run: |
+          echo "========================================================"
+          echo "  DEPLOYMENT PIPELINE SUMMARY"
+          echo "========================================================"
+          echo ""
+          echo "  Workflow:      CD Pipeline"
+          echo "  Run #:         ${{ github.run_number }}"
+          echo "  Triggered by:  ${{ github.actor }}"
+          echo "  Event:         ${{ github.event_name }}"
+          echo "  Commit:        ${{ github.sha }}"
+          echo "  Branch:        ${{ github.ref_name }}"
+          echo "  Timestamp:     $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+          echo "  Job Results:"
+          echo "  ┌─────────────────────┬──────────────────────┐"
+          echo "  │ Job                 │ Result               │"
+          echo "  ├─────────────────────┼──────────────────────┤"
+          echo "  │ build-and-push      │ ${{ needs.build-and-push.result }}      │"
+          echo "  │ deploy-staging      │ ${{ needs.deploy-staging.result }}      │"
+          echo "  │ integration-tests   │ ${{ needs.integration-tests.result }}   │"
+          echo "  │ deploy-production   │ ${{ needs.deploy-production.result }}   │"
+          echo "  └─────────────────────┴──────────────────────┘"
+          echo ""
+
+          # Determine overall pipeline status
+          STAGING_RESULT="${{ needs.deploy-staging.result }}"
+          PROD_RESULT="${{ needs.deploy-production.result }}"
+
+          if [[ "${PROD_RESULT}" == "success" ]]; then
+            echo "  OUTCOME: FULL DEPLOYMENT SUCCESSFUL"
+            echo ""
+            echo "    Staging:    DEPLOYED"
+            echo "    Production: DEPLOYED"
+            echo ""
+            echo "  The release is now live in production."
+            echo "  Monitoring: https://monitoring.example.com/dashboard"
+
+          elif [[ "${STAGING_RESULT}" == "success" && "${PROD_RESULT}" == "skipped" ]]; then
+            echo "  OUTCOME: STAGING DEPLOYED, PRODUCTION SKIPPED"
+            echo ""
+            echo "    Staging:    DEPLOYED (validated)"
+            echo "    Production: SKIPPED (not on main branch, or staging-only selected)"
+            echo ""
+            echo "  To deploy to production, merge to main or use workflow_dispatch"
+            echo "  with environment: full-pipeline"
+
+          elif [[ "${STAGING_RESULT}" == "success" && "${PROD_RESULT}" == "failure" ]]; then
+            echo "  OUTCOME: STAGING DEPLOYED, PRODUCTION FAILED"
+            echo ""
+            echo "    Staging:    DEPLOYED"
+            echo "    Production: FAILED"
+            echo ""
+            echo "  Production deployment failed. Check the deploy-production job logs."
+            echo "  Staging has the new version. Production is unchanged."
+            echo "  Incident response: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          elif [[ "${STAGING_RESULT}" == "failure" ]]; then
+            echo "  OUTCOME: DEPLOYMENT FAILED AT STAGING"
+            echo ""
+            echo "    Staging:    FAILED"
+            echo "    Production: NOT ATTEMPTED (staging gate failed)"
+            echo ""
+            echo "  Staging deployment or health check failed."
+            echo "  Production was NOT deployed. No user impact."
+            echo "  Please investigate: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          elif [[ "${{ needs.build-and-push.result }}" == "failure" ]]; then
+            echo "  OUTCOME: PIPELINE FAILED AT BUILD"
+            echo ""
+            echo "    Build:      FAILED"
+            echo "    Staging:    NOT ATTEMPTED"
+            echo "    Production: NOT ATTEMPTED"
+            echo ""
+            echo "  The build or test step failed. No deployment occurred."
+
+          else
+            echo "  OUTCOME: PIPELINE COMPLETED WITH MIXED RESULTS"
+            echo ""
+            echo "  Review each job's result above for details."
+          fi
+
+          echo ""
+          echo "  Workflow URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo ""
+          echo "========================================================"
+
+      # -----------------------------------------------------------------------
+      # Slack notification (template — requires SLACK_WEBHOOK_URL secret)
+      #
+      # Uncomment and configure to send real Slack notifications.
+      # Add SLACK_WEBHOOK_URL as a repository secret.
+      #
+      # This uses curl to send a simple webhook message. For richer
+      # formatting, use the slackapi/slack-github-action action.
+      # -----------------------------------------------------------------------
+      # - name: Send Slack notification
+      #   if: always()
+      #   run: |
+      #     STATUS="${{ needs.deploy-production.result }}"
+      #     EMOJI=":rocket:"
+      #     if [[ "$STATUS" != "success" && "$STATUS" != "skipped" ]]; then
+      #       EMOJI=":fire:"
+      #     fi
+      #
+      #     curl -s -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+      #       -H 'Content-type: application/json' \
+      #       --data "{
+      #         \"text\": \"${EMOJI} CD Pipeline ${STATUS}: ${{ github.repository }} @ ${{ github.sha }}\",
+      #         \"blocks\": [{
+      #           \"type\": \"section\",
+      #           \"text\": {
+      #             \"type\": \"mrkdwn\",
+      #             \"text\": \"${EMOJI} *CD Pipeline: ${STATUS}*\nRepo: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nTriggered by: ${{ github.actor }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>\"
+      #           }
+      #         }]
+      #       }"

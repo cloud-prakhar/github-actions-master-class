@@ -1,0 +1,158 @@
+# =============================================================================
+# Conditional Steps Demo — Module 05
+#
+# Demonstrates every important form of the "if:" condition on steps.
+#
+# if: conditions are EXPRESSIONS evaluated before each step.
+# If the expression is truthy → step runs.
+# If the expression is falsy → step is SKIPPED (not failed).
+#
+# Status functions:
+#   success()   → default: runs only if all previous steps succeeded
+#   failure()   → runs only if a previous step failed
+#   cancelled() → runs only if the job was cancelled
+#   always()    → runs unconditionally (success, failure, cancelled)
+# =============================================================================
+
+name: Conditional Steps Demo
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      simulate_failure:
+        description: 'Simulate a step failure to test failure conditions'
+        type: boolean
+        default: false
+      target_branch:
+        description: 'Simulate running on this branch name'
+        type: string
+        default: main
+
+jobs:
+  conditionals-demo:
+    name: Conditional Steps
+    runs-on: ubuntu-latest
+
+    steps:
+      # ─── STEP 1: Always runs (no if:) ────────────────────────────────────
+      # Steps without an if: condition implicitly use success().
+      # They run only if all previous steps succeeded.
+      - name: Step 1 — Always runs (implicit success())
+        run: |
+          echo "Step 1: This always runs when the job starts"
+          echo "  Event: ${{ github.event_name }}"
+          echo "  Branch: ${{ github.ref_name }}"
+
+      # ─── STEP 2: Branch condition ─────────────────────────────────────────
+      - name: Step 2 — Only on main branch
+        if: github.ref_name == 'main'
+        run: echo "Step 2: Running on main branch → production-quality checks enabled"
+
+      # ─── STEP 3: NOT main branch ─────────────────────────────────────────
+      - name: Step 3 — Only on non-main branches
+        if: github.ref_name != 'main'
+        run: echo "Step 3: Not on main → this is a feature/PR branch"
+
+      # ─── STEP 4: Event type condition ────────────────────────────────────
+      - name: Step 4 — Only on push events
+        if: github.event_name == 'push'
+        run: echo "Step 4: This was a push event (not a PR or manual trigger)"
+
+      # ─── STEP 5: Manual trigger condition ────────────────────────────────
+      - name: Step 5 — Only on manual trigger
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "Step 5: This was triggered manually by ${{ github.actor }}"
+          echo "  simulate_failure input: ${{ inputs.simulate_failure }}"
+
+      # ─── STEP 6: Simulate a failure (controlled by input) ────────────────
+      - name: Step 6 — Simulated failure step
+        id: failing-step
+        continue-on-error: true    # don't stop the job — let us test failure conditions below
+        run: |
+          if [ "${{ inputs.simulate_failure }}" == "true" ]; then
+            echo "Step 6: Simulating a failure (as requested by input)"
+            exit 1                 # non-zero exit code = step failure
+          else
+            echo "Step 6: Ran successfully (simulate_failure is false)"
+          fi
+
+      # ─── STEP 7: success() ────────────────────────────────────────────────
+      # Only runs if step 6 above succeeded.
+      # Note: continue-on-error: true on step 6 means the JOB continues
+      # even if step 6 failed — but success() on step 7 checks the actual outcome.
+      - name: Step 7 — if success()
+        if: success()
+        run: echo "Step 7: All previous steps passed (or used continue-on-error)"
+
+      # ─── STEP 8: failure() ────────────────────────────────────────────────
+      # Only runs if a PREVIOUS step actually failed.
+      # With continue-on-error: true above, failure() looks at "outcome" not "conclusion".
+      - name: Step 8 — if failure()
+        if: failure()
+        run: echo "Step 8: A previous step actually failed — this is the failure handler"
+
+      # ─── STEP 9: Check specific step outcome ─────────────────────────────
+      - name: Step 9 — Check step 6 outcome specifically
+        if: always()
+        run: |
+          OUTCOME="${{ steps.failing-step.outcome }}"
+          CONCLUSION="${{ steps.failing-step.conclusion }}"
+          echo "Step 9: Step 6 outcome:     $OUTCOME"
+          echo "Step 9: Step 6 conclusion:  $CONCLUSION"
+          echo ""
+          echo "  outcome    = actual result (success, failure, skipped)"
+          echo "  conclusion = effective result (considering continue-on-error)"
+          if [ "$OUTCOME" == "failure" ]; then
+            echo "  → Step 6 failed, but continue-on-error allowed the job to continue"
+          fi
+
+      # ─── STEP 10: always() ────────────────────────────────────────────────
+      # Runs unconditionally — even if a previous step failed and did NOT have
+      # continue-on-error: true.
+      # Use this for: cleanup, uploading reports, sending notifications.
+      - name: Step 10 — if always() — cleanup/notification
+        if: always()
+        run: |
+          echo "Step 10: always() — running regardless of previous step results"
+          echo "  This step runs even after failures (without continue-on-error)"
+          echo "  Common uses: cleanup temp files, upload logs, send notifications"
+
+      # ─── STEP 11: Complex expressions ────────────────────────────────────
+      - name: Step 11 — Complex expression (main push only)
+        if: github.ref_name == 'main' && github.event_name == 'push'
+        run: echo "Step 11: This only runs on direct pushes to main"
+
+      # ─── STEP 12: Skip CI pattern ────────────────────────────────────────
+      - name: Step 12 — Skip if commit message contains [skip ci]
+        if: "!contains(github.event.head_commit.message, '[skip ci]')"
+        run: |
+          echo "Step 12: Commit message did NOT contain [skip ci]"
+          echo "  Commit: ${{ github.event.head_commit.message }}"
+
+      # ─── STEP 13: startsWith / contains functions ─────────────────────────
+      - name: Step 13 — Tag-based condition
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "Step 13: This is a version tag push (v1.0.0, v2.3.1, etc.)"
+
+      - name: Step 13b — Branch pattern condition
+        if: startsWith(github.ref_name, 'feature/')
+        run: echo "Step 13b: This is a feature branch"
+
+      # ─── FINAL SUMMARY ────────────────────────────────────────────────────
+      - name: Summary
+        if: always()
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════╗"
+          echo "║  Conditional Steps Demo Complete             ║"
+          echo "║                                              ║"
+          echo "║  Key learnings:                              ║"
+          echo "║  • No if:    → implicit success()            ║"
+          echo "║  • success() → only when everything OK       ║"
+          echo "║  • failure() → only when something failed    ║"
+          echo "║  • always()  → unconditional (cleanup)       ║"
+          echo "║  • Use expressions for branch/event logic    ║"
+          echo "╚══════════════════════════════════════════════╝"

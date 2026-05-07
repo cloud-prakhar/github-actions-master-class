@@ -1,0 +1,204 @@
+# =============================================================================
+# Multi-Job Pipeline — Module 05, Project 3
+#
+# Three parallel jobs (lint, test, build) show that by default,
+# all jobs in a workflow run SIMULTANEOUSLY on separate runners.
+#
+# Key concepts demonstrated:
+#   - Multiple jobs
+#   - Each job gets a fresh runner (no shared state)
+#   - Jobs run in parallel unless connected with needs:
+#   - Job-level env vars
+#   - Step structure: name, uses, run, with, env
+# =============================================================================
+
+name: Multi-Job Pipeline (Parallel)
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+# Global env vars — available to all jobs and steps
+env:
+  PYTHON_VERSION: "3.14"
+  APP_NAME: multi-job-demo
+
+concurrency:
+  group: multi-job-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ─── JOB 1: LINT ──────────────────────────────────────────────────────────
+  # Runs in PARALLEL with "test" and "build" jobs.
+  # Checks code style and formatting with flake8.
+  lint:
+    name: Lint (flake8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      FLAKE8_MAX_LINE_LENGTH: "120"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install flake8
+        run: pip install flake8
+
+      - name: Run flake8 linter
+        run: |
+          echo "Running flake8 on the project..."
+          # In a real project: flake8 src/ tests/ --max-line-length=$FLAKE8_MAX_LINE_LENGTH
+          echo "[SIMULATED] flake8 found 0 issues"
+          echo "Lint passed!"
+
+      - name: Print lint job summary
+        run: |
+          echo "Job: lint"
+          echo "Runner: ${{ runner.os }}"
+          echo "Python: ${{ env.PYTHON_VERSION }}"
+          echo "Result: PASSED"
+
+  # ─── JOB 2: TEST ──────────────────────────────────────────────────────────
+  # Runs in PARALLEL with "lint" and "build" jobs.
+  # This job has NO dependency on lint — it starts at the same time.
+  test:
+    name: Test (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      PYTEST_FLAGS: "-v --tb=short"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install test dependencies
+        run: |
+          pip install pytest pytest-cov
+          # pip install -r requirements.txt  (uncomment in a real project)
+
+      - name: Run pytest
+        run: |
+          echo "Running tests with pytest..."
+          # In a real project: pytest tests/ $PYTEST_FLAGS --cov=src --cov-report=xml
+          echo "[SIMULATED] Collected 12 items"
+          echo "[SIMULATED] 12 passed in 0.45s"
+          echo "Tests passed!"
+
+      - name: Print test job summary
+        run: |
+          echo "Job: test"
+          echo "Runner: ${{ runner.os }}"
+          echo "Result: 12/12 PASSED"
+
+  # ─── JOB 3: BUILD ─────────────────────────────────────────────────────────
+  # Runs in PARALLEL with "lint" and "test" jobs.
+  # Verifies the project loads without errors and creates a build artifact.
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Job output — available to downstream jobs that declare needs: build
+    outputs:
+      build-version: ${{ steps.get-version.outputs.version }}
+      build-timestamp: ${{ steps.get-version.outputs.timestamp }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Capture build metadata
+        id: get-version     # id is required to reference outputs below
+        run: |
+          # Set step outputs for downstream jobs to consume
+          echo "version=1.0.0" >> $GITHUB_OUTPUT
+          echo "timestamp=$(date -u +%Y%m%dT%H%M%SZ)" >> $GITHUB_OUTPUT
+          echo "Build version: 1.0.0"
+          echo "Build timestamp: $(date -u)"
+
+      - name: Build application
+        run: |
+          echo "Building ${{ env.APP_NAME }}..."
+          # In a real project: python -m build
+          mkdir -p dist
+          echo "Build complete: ${{ env.APP_NAME }}-1.0.0"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+          if-no-files-found: warn   # warn if dist/ is empty (simulated above may be)
+
+      - name: Print build job summary
+        run: |
+          echo "Job: build"
+          echo "Runner: ${{ runner.os }}"
+          echo "Version: ${{ steps.get-version.outputs.version }}"
+          echo "Result: PASSED"
+
+  # ─── JOB 4: SUMMARY ───────────────────────────────────────────────────────
+  # This job runs AFTER all three parallel jobs complete.
+  # It demonstrates: using needs with multiple jobs, and accessing outputs.
+  summary:
+    name: Pipeline Summary
+    runs-on: ubuntu-latest
+    needs: [lint, test, build]   # wait for ALL three to finish
+    if: always()                  # run even if one of them failed
+
+    steps:
+      - name: Print pipeline summary
+        run: |
+          echo "═══════════════════════════════════════════"
+          echo "  PIPELINE SUMMARY"
+          echo "═══════════════════════════════════════════"
+          echo ""
+          echo "  Workflow:   ${{ github.workflow }}"
+          echo "  Commit:     ${{ github.sha }}"
+          echo "  Branch:     ${{ github.ref_name }}"
+          echo ""
+          echo "  Job Results:"
+          echo "    lint:   ${{ needs.lint.result }}"
+          echo "    test:   ${{ needs.test.result }}"
+          echo "    build:  ${{ needs.build.result }}"
+          echo ""
+          echo "  Build version:    ${{ needs.build.outputs.build-version }}"
+          echo "  Build timestamp:  ${{ needs.build.outputs.build-timestamp }}"
+          echo ""
+
+          # Determine overall result
+          if [[ "${{ needs.lint.result }}" == "success" ]] && \
+             [[ "${{ needs.test.result }}" == "success" ]] && \
+             [[ "${{ needs.build.result }}" == "success" ]]; then
+            echo "  OVERALL: ✅ ALL PASSED"
+          else
+            echo "  OVERALL: ❌ ONE OR MORE JOBS FAILED"
+          fi
+          echo "═══════════════════════════════════════════"

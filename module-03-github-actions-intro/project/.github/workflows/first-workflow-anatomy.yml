@@ -1,0 +1,253 @@
+# =============================================================================
+# First Workflow — Complete Anatomy Reference
+# Module 03 — Teaching File
+#
+# This file labels EVERY structural element of a GitHub Actions workflow.
+# It is not meant to do anything useful — it's a map of the territory.
+# Read this alongside the Module 03 README and the glossary.
+# =============================================================================
+
+# ════════════════════════════════════════════════════════════════
+# LAYER 1: WORKFLOW-LEVEL KEYS
+# These keys appear at the top level (no indentation).
+# ════════════════════════════════════════════════════════════════
+
+# KEY: name
+# TYPE: string (optional)
+# The display name shown in the GitHub Actions UI.
+name: Workflow Anatomy Reference
+
+# KEY: on
+# TYPE: mapping (required)
+# Defines what events trigger this workflow.
+# Can be a single event name (string) or a mapping of events to their config.
+on:
+  # EVENT: push
+  # Triggers when commits are pushed to the repository.
+  push:
+    # FILTER: branches
+    # Only trigger when pushing to these branch name patterns.
+    branches:
+      - main
+      - develop
+    # FILTER: paths
+    # Only trigger when at least one matching file changed.
+    paths:
+      - 'src/**'
+      - '*.py'
+    # FILTER: tags (instead of branches)
+    # tags:
+    #   - 'v*'
+
+  # EVENT: workflow_dispatch
+  # Enables manual triggering from the GitHub UI or CLI.
+  workflow_dispatch:
+    # INPUTS: user-provided values for manual runs
+    inputs:
+      # INPUT NAME: environment
+      environment:
+        description: 'Which environment to target'
+        type: choice              # INPUT TYPE: choice (dropdown)
+        options:                  # dropdown options
+          - dev
+          - staging
+          - production
+        required: true            # must be provided
+        default: dev              # pre-selected value
+
+      # INPUT NAME: debug
+      debug:
+        description: 'Enable debug logging'
+        type: boolean             # INPUT TYPE: toggle
+        default: false
+
+# KEY: env
+# TYPE: mapping (optional)
+# Environment variables available to ALL jobs and steps.
+env:
+  PYTHON_VERSION: "3.14"         # string (quoted to prevent float parsing)
+  APP_NAME: anatomy-demo         # string (no quoting needed here)
+  CACHE_KEY: v1                  # cache version string
+
+# KEY: permissions
+# TYPE: mapping (optional)
+# Controls what actions the GITHUB_TOKEN is allowed to perform.
+# Principle of least privilege: only grant what you actually need.
+permissions:
+  contents: read        # read repo contents
+  pull-requests: write  # create PR comments
+
+# KEY: concurrency
+# TYPE: mapping (optional)
+# Prevents multiple runs of this workflow from running simultaneously
+# for the same branch or PR.
+concurrency:
+  # GROUP: unique key per "context" (PR number or branch name)
+  # When a new run starts with the same group, the old one is cancelled.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true   # cancel the older run (good for PRs)
+
+# ════════════════════════════════════════════════════════════════
+# LAYER 2: JOBS
+# ════════════════════════════════════════════════════════════════
+
+# KEY: jobs
+# TYPE: mapping (required)
+# Contains all jobs. Each key is a job ID.
+jobs:
+
+  # ═══ JOB 1 ════════════════════════════════════════════════════
+
+  # JOB ID: example-job
+  # Must be unique in the workflow. No spaces — use hyphens.
+  example-job:
+
+    # KEY: name (job-level)
+    # TYPE: string (optional)
+    # Display name in GitHub UI. Can include expressions.
+    name: Example Job (${{ github.ref_name }})
+
+    # KEY: runs-on
+    # TYPE: string or list (required)
+    # Specifies the runner. Options:
+    #   ubuntu-latest, ubuntu-22.04, ubuntu-24.04
+    #   windows-latest, windows-2022
+    #   macos-latest, macos-14
+    #   self-hosted (your own machine)
+    runs-on: ubuntu-latest
+
+    # KEY: timeout-minutes
+    # TYPE: integer (optional, default: 360)
+    # Kill the job if it runs longer than this. Prevents runaway jobs.
+    timeout-minutes: 15
+
+    # KEY: env (job-level)
+    # TYPE: mapping (optional)
+    # Job-level env vars. Override workflow-level vars with the same name.
+    env:
+      JOB_ENV: production
+      SOME_VALUE: "overrides-workflow-level"
+
+    # KEY: outputs
+    # TYPE: mapping (optional)
+    # Values this job produces for downstream jobs to consume.
+    outputs:
+      # Output name: expression referencing a step output
+      build-result: ${{ steps.build-step.outputs.result }}
+      version: ${{ steps.version-step.outputs.tag }}
+
+    # KEY: if (job-level)
+    # TYPE: expression (optional)
+    # Skip this job if the expression evaluates to false.
+    if: github.event_name != 'schedule'   # skip on scheduled runs
+
+    # KEY: continue-on-error (job-level)
+    # TYPE: boolean (optional, default: false)
+    # If true, the workflow continues even if this job fails.
+    continue-on-error: false
+
+    # ══ STEPS ════════════════════════════════════════════════════
+
+    # KEY: steps
+    # TYPE: list of mappings (required)
+    # Each list item is one step. Steps run SEQUENTIALLY.
+    steps:
+
+      # ─── STEP TYPE A: ACTION STEP ───────────────────────────
+      # Runs a pre-built action from the Marketplace.
+      - name: Checkout repository           # STEP KEY: name (display label)
+        id: checkout                        # STEP KEY: id (reference this step later)
+        uses: actions/checkout@v4           # STEP KEY: uses (action reference)
+        with:                              # STEP KEY: with (action inputs)
+          fetch-depth: 0                   # input: full history (not shallow)
+          token: ${{ secrets.GITHUB_TOKEN }}  # input: auth token
+
+      # ─── STEP TYPE B: SHELL COMMAND STEP ────────────────────
+      - name: Single line command
+        run: echo "Hello from a run step"   # STEP KEY: run (shell command)
+
+      # ─── STEP TYPE C: MULTI-LINE SHELL SCRIPT ───────────────
+      - name: Multi-line script
+        run: |                              # literal block scalar: preserves newlines
+          echo "Line 1 of script"
+          echo "Line 2 of script"
+          python --version
+        shell: bash                         # STEP KEY: shell (bash, sh, python, pwsh)
+        working-directory: ./src            # STEP KEY: working-directory
+
+      # ─── STEP TYPE D: STEP WITH OUTPUTS ─────────────────────
+      - name: Set step output
+        id: build-step                      # id required to reference outputs
+        run: |
+          echo "result=success" >> $GITHUB_OUTPUT   # set an output
+          echo "result value was set"
+
+      - name: Set version output
+        id: version-step
+        run: echo "tag=v1.2.3" >> $GITHUB_OUTPUT
+
+      # ─── STEP TYPE E: STEP WITH ENV VARS ────────────────────
+      - name: Step with env vars
+        run: |
+          echo "App name: $APP_NAME"           # from workflow-level env
+          echo "Job env: $JOB_ENV"             # from job-level env
+          echo "Step secret: $MY_SECRET"       # from step-level env
+          echo "Step specific: $STEP_VAR"      # from step-level env
+        env:                                   # STEP KEY: env (step-level)
+          MY_SECRET: ${{ secrets.SOME_SECRET }}  # secret injection
+          STEP_VAR: "only-in-this-step"
+
+      # ─── STEP TYPE F: CONDITIONAL STEP ──────────────────────
+      - name: Run only on main branch
+        if: github.ref == 'refs/heads/main'   # STEP KEY: if
+        run: echo "This only runs on main!"
+
+      - name: Run only on failure
+        if: failure()                         # status function
+        run: echo "A previous step failed!"
+
+      - name: Always run (cleanup)
+        if: always()                          # always() = even if job failed
+        run: echo "This always runs"
+
+      # ─── STEP TYPE G: USING STEP OUTPUTS ────────────────────
+      - name: Use previous step's output
+        run: |
+          echo "Build result: ${{ steps.build-step.outputs.result }}"
+          echo "Version tag:  ${{ steps.version-step.outputs.tag }}"
+
+      # ─── STEP TYPE H: CONTINUE ON ERROR ─────────────────────
+      - name: Optional/flaky step
+        continue-on-error: true               # STEP KEY: continue-on-error
+        run: |
+          echo "This step might fail but that's OK"
+          exit 1   # simulates a failure
+
+      - name: This runs even though previous step failed
+        run: echo "continue-on-error lets us reach this step"
+
+      # ─── STEP TYPE I: TIMEOUT ON A STEP ─────────────────────
+      - name: Step with timeout
+        timeout-minutes: 5                    # STEP KEY: timeout-minutes
+        run: |
+          echo "This step gets 5 minutes max"
+          sleep 10   # 10 seconds — well within the 5-minute limit
+
+  # ═══ JOB 2: DEPENDENT JOB ════════════════════════════════════
+
+  downstream-job:
+    name: Downstream (depends on example-job)
+
+    # KEY: needs
+    # TYPE: string or list (optional)
+    # Makes this job wait for the listed jobs to complete successfully.
+    needs: example-job        # waits for example-job
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Access upstream outputs
+        run: |
+          echo "Build result from example-job: ${{ needs.example-job.outputs.build-result }}"
+          echo "Version from example-job: ${{ needs.example-job.outputs.version }}"
+          echo "example-job final result: ${{ needs.example-job.result }}"

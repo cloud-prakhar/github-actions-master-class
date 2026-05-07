@@ -1,0 +1,94 @@
+# ============================================================
+# Exercise 02 SOLUTION: GitHub Actions Workflow Skeleton
+# ============================================================
+# This is the complete, correct YAML for the workflow described
+# in exercise-02-instructions.md.
+#
+# Key things to notice:
+#   1. "on:" at the root level — not indented
+#   2. Each event under "on:" is a mapping key
+#   3. "jobs:" is at the root level, same as "on:"
+#   4. Each job ID is a key under "jobs:"
+#   5. "steps:" is a LIST — items start with "- name:"
+#   6. "needs:" creates the job dependency (lint must pass before test runs)
+# ============================================================
+
+# ─── WORKFLOW NAME ────────────────────────────────────────────────
+name: Python CI
+
+# ─── TRIGGERS ────────────────────────────────────────────────────
+on:                                      # mapping of event → config
+
+  push:                                  # push event
+    branches:                            # branch filter (list)
+      - main
+      - develop
+
+  pull_request:                          # pull_request event
+    branches:
+      - main
+
+  workflow_dispatch:                     # manual trigger
+    inputs:                              # mapping of input names
+      debug_mode:                        # input ID
+        description: "Enable debug output"
+        type: boolean
+        default: false
+
+# ─── WORKFLOW-LEVEL ENVIRONMENT VARIABLES ────────────────────────
+env:
+  PYTHON_VERSION: "3.14"                 # quoted — prevent float parsing
+  APP_NAME: my-python-app
+
+# ─── JOBS ────────────────────────────────────────────────────────
+jobs:
+
+  # ── JOB 1: lint ─────────────────────────────────────────────────
+  lint:                                  # job ID
+    runs-on: ubuntu-latest               # GitHub-hosted runner
+    timeout-minutes: 10                  # kill job if it hangs
+
+    steps:                               # LIST of steps (sequential)
+
+      - name: Checkout repository        # step 1
+        uses: actions/checkout@v4        # action (no shell command)
+
+      - name: Set up Python              # step 2
+        uses: actions/setup-python@v5
+        with:                            # action inputs
+          python-version: "3.14"         # use the workflow env var value
+
+      - name: Install linter             # step 3
+        run: pip install flake8          # single shell command
+
+      - name: Run linter                 # step 4
+        run: flake8 src/                 # single shell command
+
+  # ── JOB 2: test ─────────────────────────────────────────────────
+  test:                                  # job ID
+    needs: lint                          # DEPENDENCY: wait for lint job
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository        # step 1
+        uses: actions/checkout@v4
+
+      - name: Set up Python              # step 2
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies       # step 3
+        run: pip install -r requirements.txt
+
+      - name: Run tests                  # step 4
+        run: pytest tests/ -v
+        env:                             # step-level env var
+          DEBUG: ${{ inputs.debug_mode }}  # from workflow_dispatch input
+
+      - name: Upload coverage            # step 5
+        uses: actions/upload-artifact@v4
+        with:                            # action inputs (mapping)
+          name: coverage-report
+          path: coverage/

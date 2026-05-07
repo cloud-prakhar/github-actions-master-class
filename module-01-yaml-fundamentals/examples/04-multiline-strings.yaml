@@ -1,0 +1,146 @@
+# ============================================================
+# YAML Example 04: Multi-line Strings
+# ============================================================
+# Multi-line strings are essential for GitHub Actions because
+# the "run:" key takes shell scripts that span multiple lines.
+# Understanding | vs > will save you from many headaches.
+# ============================================================
+
+# ─── LITERAL BLOCK SCALAR ( | ) ──────────────────────────────────
+# The | operator PRESERVES line breaks exactly as written.
+# Every newline in your YAML becomes a \n in the string.
+# This is what you use for shell scripts.
+
+literal_script: |
+  echo "Line 1"
+  echo "Line 2"
+  echo "Line 3"
+# Result: "echo \"Line 1\"\necho \"Line 2\"\necho \"Line 3\"\n"
+# When run as a bash script, each echo is a separate command.
+
+another_literal: |
+  #!/bin/bash
+  set -e
+  cd /app
+  npm install
+  npm run build
+# Each line is executed separately by the shell runner.
+
+# ─── FOLDED BLOCK SCALAR ( > ) ───────────────────────────────────
+# The > operator FOLDS line breaks into spaces.
+# Useful for long values that you want to wrap for readability.
+
+long_description: >
+  This is a very long description that would make
+  the YAML file hard to read if kept on one line.
+  YAML folds all the newlines into spaces, so
+  this becomes one long paragraph.
+# Result: "This is a very long description that would make the YAML file hard to read if kept on one line. YAML folds all the newlines into spaces, so this becomes one long paragraph.\n"
+
+# Blank lines in folded scalars become actual newlines:
+folded_with_paragraphs: >
+  First paragraph that is
+  wrapped across lines.
+
+  Second paragraph starts after the blank line.
+  It too is wrapped.
+# Result: "First paragraph that is wrapped across lines.\nSecond paragraph starts after the blank line. It too is wrapped.\n"
+
+# ─── CHOMPING INDICATORS ─────────────────────────────────────────
+# By default, | and > keep exactly ONE trailing newline.
+# Chomping modifiers change this behavior.
+
+# Default ( | ) — one trailing newline
+default_newline: |
+  hello
+
+# Strip ( |- ) — NO trailing newline
+stripped: |-
+  hello
+# Result: "hello" (no \n at end)
+
+# Keep ( |+ ) — ALL trailing newlines preserved
+kept: |+
+  hello
+
+
+# Result: "hello\n\n\n" (three newlines: one from the line, two blank lines)
+
+# Same modifiers work with >
+folded_stripped: >-
+  This is folded
+  and stripped of trailing newline
+
+# ─── INDENTATION IN LITERAL BLOCKS ───────────────────────────────
+# The block content's indentation is relative to the surrounding structure.
+# Extra indentation beyond the block level is preserved.
+
+indented_script: |
+  # This is a top-level shell command
+  if [ "$ENV" == "production" ]; then
+    echo "Running in production"
+    ./deploy-prod.sh
+  else
+    echo "Running in non-production"
+    ./deploy-dev.sh
+  fi
+# The if/then/else indentation is PRESERVED in the string.
+
+# ─── GITHUB ACTIONS USE CASES ────────────────────────────────────
+# Here is how multi-line strings appear in real workflow files.
+
+# 1. Multi-command run step
+run_multiple_commands:
+  run: |
+    npm ci
+    npm run lint
+    npm run build
+    npm test
+
+# 2. Inline condition script
+check_and_deploy:
+  run: |
+    if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+      echo "Deploying to production..."
+      ./scripts/deploy.sh --env production
+    else
+      echo "Not on main branch, skipping deploy"
+    fi
+
+# 3. Setting multiple environment variables via GITHUB_ENV
+set_env_vars:
+  run: |
+    echo "VERSION=${{ github.sha }}" >> $GITHUB_ENV
+    echo "TIMESTAMP=$(date -u +%Y%m%d%H%M%S)" >> $GITHUB_ENV
+    echo "BRANCH=${{ github.ref_name }}" >> $GITHUB_ENV
+
+# 4. Writing a job summary report
+write_summary:
+  run: |
+    echo "## Build Results" >> $GITHUB_STEP_SUMMARY
+    echo "" >> $GITHUB_STEP_SUMMARY
+    echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+    echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+    echo "| Lint | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+    echo "| Tests | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+    echo "| Build | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+
+# 5. Long workflow_dispatch reason — use > for readability
+dispatch_description: >
+  Manually trigger the deployment pipeline.
+  Select the target environment and optionally
+  specify a version tag to deploy.
+
+# ─── COMMON MISTAKE ──────────────────────────────────────────────
+# Forgetting | and writing multi-line without it:
+
+# WRONG — YAML sees this as a plain scalar with continuation
+broken_script:
+  run: npm ci
+       npm test     # This is NOT a second command! It's a parse error or ignored.
+
+# CORRECT
+correct_script:
+  run: |
+    npm ci
+    npm test

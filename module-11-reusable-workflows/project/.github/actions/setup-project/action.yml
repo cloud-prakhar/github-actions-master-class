@@ -1,0 +1,112 @@
+# =============================================================================
+# Composite Action: Setup Python Project — Module 11
+#
+# A composite action bundles multiple steps into a single reusable unit.
+# Unlike reusable workflows (which are entire jobs), composite actions
+# are STEPS — they plug into an existing job's step list.
+#
+# Use this action in any workflow like:
+#
+#   - name: Setup project
+#     uses: ./.github/actions/setup-project
+#     with:
+#       python-version: '3.14'
+#       working-directory: ./my-app
+#
+# This action:
+#   1. Sets up the requested Python version
+#   2. Caches pip packages keyed on the requirements files
+#   3. Installs dependencies (runtime + dev)
+#   4. Reports the cache status as an output
+# =============================================================================
+
+name: Setup Python Project
+description: |
+  Sets up Python, caches pip packages, and installs project dependencies.
+  Use this in any job that needs the project environment.
+
+# ─── INPUTS ──────────────────────────────────────────────────────────────────
+inputs:
+  python-version:
+    description: 'Python version to install'
+    required: false
+    default: '3.14'
+
+  working-directory:
+    description: 'Path to the project root (where requirements.txt lives)'
+    required: false
+    default: '.'
+
+  install-dev:
+    description: 'Install development dependencies (requirements-dev.txt)'
+    required: false
+    default: 'true'
+
+# ─── OUTPUTS ─────────────────────────────────────────────────────────────────
+outputs:
+  cache-hit:
+    description: 'Whether the pip cache was restored (true/false)'
+    value: ${{ steps.pip-cache.outputs.cache-hit }}
+  python-version:
+    description: 'The actual Python version that was installed'
+    value: ${{ steps.setup-python.outputs.python-version }}
+
+# ─── IMPLEMENTATION ───────────────────────────────────────────────────────────
+# composite means: this action is made of steps (not JavaScript or Docker).
+runs:
+  using: composite
+
+  steps:
+    # Step 1: Install the requested Python version
+    - name: Set up Python ${{ inputs.python-version }}
+      id: setup-python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    # Step 2: Cache pip packages
+    # The cache key is based on the OS and the hash of both requirements files.
+    # When requirements files don't change, the cache is restored instantly.
+    - name: Cache pip packages
+      id: pip-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ inputs.python-version }}-${{ hashFiles(format('{0}/requirements*.txt', inputs.working-directory)) }}
+        restore-keys: |
+          ${{ runner.os }}-pip-${{ inputs.python-version }}-
+          ${{ runner.os }}-pip-
+
+    # Step 3: Install runtime dependencies
+    - name: Install runtime dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+          echo "Installed runtime dependencies from requirements.txt"
+        else
+          echo "No requirements.txt found — skipping runtime install"
+        fi
+
+    # Step 4: Optionally install dev dependencies
+    - name: Install dev dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      if: inputs.install-dev == 'true'
+      run: |
+        if [ -f requirements-dev.txt ]; then
+          pip install -r requirements-dev.txt
+          echo "Installed dev dependencies from requirements-dev.txt"
+        else
+          echo "No requirements-dev.txt found — skipping dev install"
+        fi
+
+    # Step 5: Report what was installed
+    - name: Report setup summary
+      shell: bash
+      run: |
+        echo "Python project setup complete:"
+        echo "  Python: $(python --version)"
+        echo "  pip:    $(pip --version)"
+        echo "  Cache:  ${{ steps.pip-cache.outputs.cache-hit == 'true' && 'restored from cache' || 'fresh install' }}"

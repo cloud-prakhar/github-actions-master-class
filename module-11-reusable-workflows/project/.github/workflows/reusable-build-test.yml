@@ -1,0 +1,193 @@
+# =============================================================================
+# Reusable Workflow: Build and Test — Module 11
+#
+# This workflow is triggered by OTHER workflows via workflow_call.
+# It CANNOT be triggered by push, pull_request, or schedule.
+#
+# How it works:
+#   1. The calling workflow declares: uses: ./.github/workflows/reusable-build-test.yml
+#   2. It passes inputs and secrets
+#   3. This workflow runs as a called workflow
+#   4. Its job outputs are available back to the calling workflow
+#
+# WHY use reusable workflows?
+#   - DRY: define your CI logic once, use it from many caller workflows
+#   - Consistency: all teams use the same tested pipeline
+#   - Versioned: pin to a specific commit/tag of the workflow file
+#   - Governed: only approved workflows run in sensitive environments
+# =============================================================================
+
+name: Reusable — Build and Test
+
+on:
+  workflow_call:                # THIS is what makes it reusable
+    # ── INPUTS ───────────────────────────────────────────────────────────────
+    # Inputs defined here become parameters the caller must/can provide.
+    inputs:
+      python-version:
+        description: 'Python version to use'
+        type: string
+        default: '3.14'
+        required: false
+
+      run-lint:
+        description: 'Whether to run flake8 linting'
+        type: boolean
+        default: true
+        required: false
+
+      environment:
+        description: 'Target environment context'
+        type: string
+        default: 'dev'
+        required: false
+
+      working-directory:
+        description: 'Root directory of the project'
+        type: string
+        default: '.'
+        required: false
+
+    # ── SECRETS ──────────────────────────────────────────────────────────────
+    # Secrets must be explicitly declared. Callers pass them with:
+    #   secrets: inherit   (pass all caller secrets)
+    #   or
+    #   secrets:
+    #     CODECOV_TOKEN: ${{ secrets.MY_CODECOV_TOKEN }}
+    secrets:
+      CODECOV_TOKEN:
+        description: 'Codecov upload token (optional)'
+        required: false
+      PYPI_TOKEN:
+        description: 'PyPI publish token (optional)'
+        required: false
+
+    # ── OUTPUTS ──────────────────────────────────────────────────────────────
+    # Values this workflow produces for the calling workflow to consume.
+    outputs:
+      build-version:
+        description: 'The version that was built'
+        value: ${{ jobs.build.outputs.version }}
+      test-result:
+        description: 'Whether tests passed: success or failure'
+        value: ${{ jobs.test.outputs.result }}
+
+jobs:
+
+  # ─── JOB: LINT ─────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (Python ${{ inputs.python-version }})
+    runs-on: ubuntu-latest
+    # Skip this job entirely if run-lint input is false.
+    # "skipped" jobs don't count as failures.
+    if: inputs.run-lint == true
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ inputs.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: pip
+
+      - name: Install flake8
+        working-directory: ${{ inputs.working-directory }}
+        run: pip install flake8
+
+      - name: Run flake8
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "Linting with Python ${{ inputs.python-version }}"
+          echo "Environment context: ${{ inputs.environment }}"
+          # In a real project: flake8 src/ tests/
+          echo "[SIMULATED] flake8 → 0 issues found"
+
+  # ─── JOB: BUILD ─────────────────────────────────────────────────────────────
+  build:
+    name: Build (Python ${{ inputs.python-version }})
+    runs-on: ubuntu-latest
+    needs: lint
+    # If lint was skipped (run-lint=false), "skipped" is not failure,
+    # so this still runs. Use always() only if you want to run even on failure.
+    if: always() && (needs.lint.result == 'success' || needs.lint.result == 'skipped')
+    timeout-minutes: 10
+
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ inputs.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          pip install -r requirements.txt 2>/dev/null || echo "No requirements.txt found, skipping"
+
+      - name: Set build version
+        id: version
+        run: |
+          VERSION="1.0.${{ github.run_number }}"
+          echo "value=$VERSION" >> $GITHUB_OUTPUT
+          echo "Build version: $VERSION"
+
+      - name: Build application
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "Building version ${{ steps.version.outputs.value }}"
+          echo "Python: ${{ inputs.python-version }}"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "[SIMULATED] Build successful"
+
+  # ─── JOB: TEST ─────────────────────────────────────────────────────────────
+  test:
+    name: Test (Python ${{ inputs.python-version }})
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 15
+
+    outputs:
+      result: ${{ steps.run-tests.outputs.result }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ inputs.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: pip
+
+      - name: Install test dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          pip install pytest pytest-cov 2>/dev/null
+          pip install -r requirements-dev.txt 2>/dev/null || echo "No requirements-dev.txt, continuing"
+
+      - name: Run tests
+        id: run-tests
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "Running tests with Python ${{ inputs.python-version }}"
+          # In a real project: pytest tests/ -v --cov=src
+          echo "[SIMULATED] All tests passed"
+          echo "result=success" >> $GITHUB_OUTPUT
+        env:
+          # The secret is available here if the caller passed it
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload test coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-py${{ inputs.python-version }}-${{ github.run_number }}
+          path: ${{ inputs.working-directory }}/htmlcov/
+          retention-days: 14
+          if-no-files-found: warn

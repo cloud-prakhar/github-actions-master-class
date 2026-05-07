@@ -1,0 +1,405 @@
+# =============================================================================
+# Module 06 — Environment Variables Demo
+# =============================================================================
+#
+# PURPOSE:
+#   This workflow demonstrates every aspect of environment variables in
+#   GitHub Actions, including:
+#     • Setting env at workflow, job, and step levels
+#     • Precedence rules (step > job > workflow)
+#     • Accessing env vars in shell scripts vs YAML expressions
+#     • All built-in GITHUB_* environment variables
+#     • Setting dynamic env vars via the GITHUB_ENV file
+#     • Using dynamically-set vars in subsequent steps
+#
+# HOW TO USE:
+#   Push this file to your repository (or trigger manually via workflow_dispatch).
+#   Open the Actions tab and inspect each step's log output to see the values.
+#
+# KEY LEARNING POINTS:
+#   1. A more specific scope (step) ALWAYS overrides a wider scope (job, workflow).
+#   2. Use $VAR_NAME in shell scripts and ${{ env.VAR_NAME }} in YAML expressions.
+#   3. GITHUB_ENV allows one step to set an env var for all subsequent steps.
+#   4. Built-in GITHUB_* vars are always available and cannot be overridden.
+# =============================================================================
+
+name: "Module 06 — Environment Variables Demo"
+
+# ── Trigger ──────────────────────────────────────────────────────────────────
+# This workflow runs on every push and can also be triggered manually.
+# manual dispatch lets instructors trigger it without making a commit.
+on:
+  push:
+  workflow_dispatch:
+
+# ── Workflow-Level Environment Variables ─────────────────────────────────────
+# These variables are available to EVERY job and EVERY step in this workflow.
+# Think of this as the "global" configuration.
+env:
+  APP_NAME: "my-awesome-app"
+  APP_VERSION: "1.0.0"
+  NODE_ENV: "development"
+  ENABLE_DEBUG: "false"
+  MAX_RETRIES: "3"
+
+# ── Jobs ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ============================================================================
+  # JOB 1: Basic Env Var Access
+  # ============================================================================
+  # Demonstrates how to read workflow-level env vars in shell commands
+  # and YAML expressions.
+  basic-env-access:
+    name: "1 · Basic Env Var Access"
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Step 1.1: Read workflow-level vars in bash ──────────────────────────
+      # In bash (and any POSIX shell), workflow/job/step env vars are accessible
+      # as plain $VARIABLE_NAME or ${VARIABLE_NAME}.
+      - name: "1.1 — Read env vars in bash"
+        run: |
+          echo "===== Workflow-Level Env Vars ====="
+          echo "APP_NAME    = $APP_NAME"
+          echo "APP_VERSION = $APP_VERSION"
+          echo "NODE_ENV    = $NODE_ENV"
+          echo "ENABLE_DEBUG= $ENABLE_DEBUG"
+          echo "MAX_RETRIES = $MAX_RETRIES"
+          echo ""
+          echo "All of the above are set at the workflow level."
+
+      # ── Step 1.2: Read env vars in YAML expressions ─────────────────────────
+      # The ${{ env.VAR_NAME }} expression is evaluated by GitHub before passing
+      # the step to the runner. This means it can be used in YAML fields that
+      # shell variables cannot reach (like step names or `with:` inputs).
+      #
+      # NOTE: The step NAME below uses ${{ env.APP_NAME }} — the name is resolved
+      # before the step executes, so it works.
+      - name: "1.2 — Step for ${{ env.APP_NAME }} (name uses YAML expression)"
+        run: |
+          echo "The step name above was dynamically set using: \${{ env.APP_NAME }}"
+          echo ""
+          echo "In YAML expressions: ${{ env.APP_NAME }} version ${{ env.APP_VERSION }}"
+          echo "In bash script:      $APP_NAME version $APP_VERSION"
+          echo ""
+          echo "Both approaches print the same value."
+
+      # ── Step 1.3: Use env var in a conditional ──────────────────────────────
+      # YAML expressions in `if:` fields are evaluated before the step runs.
+      # The step only executes when the condition is true.
+      - name: "1.3 — Conditional step (debug mode off)"
+        if: ${{ env.ENABLE_DEBUG == 'true' }}
+        run: echo "This step is SKIPPED because ENABLE_DEBUG is 'false'."
+
+      - name: "1.3 — Conditional step (debug mode on would show this)"
+        if: ${{ env.ENABLE_DEBUG == 'false' }}
+        run: echo "This step RUNS because ENABLE_DEBUG is 'false'."
+
+
+  # ============================================================================
+  # JOB 2: Scope Precedence Demo
+  # ============================================================================
+  # Demonstrates the three-level override hierarchy:
+  #   Step env  >  Job env  >  Workflow env
+  scope-precedence:
+    name: "2 · Scope & Precedence"
+    runs-on: ubuntu-latest
+
+    # ── Job-Level Environment Variables ──────────────────────────────────────
+    # These variables are available to all steps in THIS JOB ONLY.
+    # They OVERRIDE workflow-level variables with the same name.
+    # Note: APP_NAME is NOT overridden here, so it keeps the workflow-level value.
+    env:
+      # Override: This job uses a different NODE_ENV than the workflow default.
+      NODE_ENV: "test"
+      # New: This variable doesn't exist at the workflow level.
+      JOB_ENV: "job-scope"
+      # Override: This job changes the version.
+      APP_VERSION: "2.0.0-test"
+
+    steps:
+      # ── Step 2.1: Show what job-level override looks like ───────────────────
+      # APP_NAME: from workflow-level (not overridden in this job)
+      # APP_VERSION: from job-level   (overrides workflow's "1.0.0")
+      # NODE_ENV: from job-level      (overrides workflow's "development")
+      # JOB_ENV: from job-level       (new, didn't exist at workflow level)
+      - name: "2.1 — Job-level overrides"
+        run: |
+          echo "===== After Job-Level Overrides ====="
+          echo "APP_NAME    = $APP_NAME      (from WORKFLOW level — not overridden)"
+          echo "APP_VERSION = $APP_VERSION   (from JOB level — was '1.0.0' at workflow level)"
+          echo "NODE_ENV    = $NODE_ENV      (from JOB level — was 'development')"
+          echo "JOB_ENV     = $JOB_ENV       (from JOB level — new variable)"
+          echo ""
+          echo "Key insight: job env overrides workflow env, but only within this job."
+
+      # ── Step 2.2: Apply step-level override ─────────────────────────────────
+      # Step env OVERRIDES both workflow-level AND job-level for this step only.
+      # Outside this step, APP_VERSION returns to the job-level value "2.0.0-test".
+      - name: "2.2 — Step-level override (active inside this step)"
+        env:
+          APP_VERSION: "3.0.0-step"    # overrides job-level "2.0.0-test" for THIS step only
+          NODE_ENV: "production"        # overrides job-level "test" for THIS step only
+          STEP_VAR: "step-scope-only"  # new variable, only exists in this step
+        run: |
+          echo "===== Inside Step With Step-Level env: ====="
+          echo "APP_NAME    = $APP_NAME    (still from workflow — not touched)"
+          echo "APP_VERSION = $APP_VERSION (from STEP level — overrides job's '2.0.0-test')"
+          echo "NODE_ENV    = $NODE_ENV    (from STEP level — overrides job's 'test')"
+          echo "JOB_ENV     = $JOB_ENV     (from JOB level — not overridden at step)"
+          echo "STEP_VAR    = $STEP_VAR    (from STEP level — only exists here)"
+
+      # ── Step 2.3: After step-level override is gone ──────────────────────────
+      # This step does NOT have a step-level env: block.
+      # So APP_VERSION and NODE_ENV revert to the job-level values.
+      # STEP_VAR is completely gone (it never existed at job/workflow level).
+      - name: "2.3 — After step override (reverts to job-level)"
+        run: |
+          echo "===== After Step-Level Override is Gone ====="
+          echo "APP_VERSION = $APP_VERSION (back to job level: '2.0.0-test')"
+          echo "NODE_ENV    = $NODE_ENV    (back to job level: 'test')"
+          echo "STEP_VAR    = '${STEP_VAR}' (empty — was only defined in the previous step)"
+          echo ""
+          echo "Precedence summary:  Step > Job > Workflow"
+
+
+  # ============================================================================
+  # JOB 3: Built-in GITHUB_* Variables
+  # ============================================================================
+  # GitHub automatically provides many environment variables in every workflow
+  # run. These are set by the runner and reflect the current run context.
+  builtin-github-vars:
+    name: "3 · Built-in GITHUB_* Variables"
+    runs-on: ubuntu-latest
+    steps:
+      # ── Step 3.1: Identity & Trigger ────────────────────────────────────────
+      - name: "3.1 — Identity and trigger information"
+        run: |
+          echo "===== Identity & Trigger ====="
+          echo ""
+          echo "Who triggered the run?"
+          echo "  GITHUB_ACTOR       = $GITHUB_ACTOR"
+          echo "  GITHUB_TRIGGERING_ACTOR = $GITHUB_TRIGGERING_ACTOR"
+          echo ""
+          echo "What triggered the run?"
+          echo "  GITHUB_EVENT_NAME  = $GITHUB_EVENT_NAME"
+          echo ""
+          echo "Which repository?"
+          echo "  GITHUB_REPOSITORY  = $GITHUB_REPOSITORY"
+          echo "  GITHUB_REPOSITORY_OWNER = $GITHUB_REPOSITORY_OWNER"
+
+      # ── Step 3.2: Git ref information ───────────────────────────────────────
+      - name: "3.2 — Git ref and commit information"
+        run: |
+          echo "===== Git Ref & Commit ====="
+          echo ""
+          echo "Branch or tag:"
+          echo "  GITHUB_REF         = $GITHUB_REF"
+          echo "  GITHUB_REF_NAME    = $GITHUB_REF_NAME"
+          echo "  GITHUB_REF_TYPE    = $GITHUB_REF_TYPE   (branch or tag)"
+          echo ""
+          echo "Commit details:"
+          echo "  GITHUB_SHA         = $GITHUB_SHA"
+          echo "  GITHUB_BASE_REF    = $GITHUB_BASE_REF   (for PRs: target branch)"
+          echo "  GITHUB_HEAD_REF    = $GITHUB_HEAD_REF   (for PRs: source branch)"
+
+      # ── Step 3.3: Run identification ────────────────────────────────────────
+      - name: "3.3 — Run identification numbers"
+        run: |
+          echo "===== Run Identification ====="
+          echo ""
+          echo "  GITHUB_RUN_ID      = $GITHUB_RUN_ID     (unique across all repos)"
+          echo "  GITHUB_RUN_NUMBER  = $GITHUB_RUN_NUMBER (sequential per workflow)"
+          echo "  GITHUB_RUN_ATTEMPT = $GITHUB_RUN_ATTEMPT (1 on first try, 2 on retry)"
+          echo ""
+          echo "  GITHUB_WORKFLOW    = $GITHUB_WORKFLOW   (workflow name)"
+          echo "  GITHUB_JOB         = $GITHUB_JOB        (current job ID)"
+          echo "  GITHUB_ACTION      = $GITHUB_ACTION     (current step action name)"
+
+      # ── Step 3.4: Filesystem paths ──────────────────────────────────────────
+      - name: "3.4 — Runner filesystem paths"
+        run: |
+          echo "===== Filesystem Paths ====="
+          echo ""
+          echo "  GITHUB_WORKSPACE   = $GITHUB_WORKSPACE"
+          echo "    (where your code is checked out)"
+          echo ""
+          echo "  RUNNER_TEMP        = $RUNNER_TEMP"
+          echo "    (temporary directory, cleaned up after each job)"
+          echo ""
+          echo "  RUNNER_TOOL_CACHE  = $RUNNER_TOOL_CACHE"
+          echo "    (where setup-* actions cache tools)"
+          echo ""
+          echo "  GITHUB_PATH        = $GITHUB_PATH"
+          echo "    (file to append to PATH; similar to GITHUB_ENV but for PATH)"
+
+      # ── Step 3.5: Server and environment info ───────────────────────────────
+      - name: "3.5 — Server and runner environment"
+        run: |
+          echo "===== Server & Runner Environment ====="
+          echo ""
+          echo "  GITHUB_SERVER_URL  = $GITHUB_SERVER_URL"
+          echo "  GITHUB_API_URL     = $GITHUB_API_URL"
+          echo "  GITHUB_GRAPHQL_URL = $GITHUB_GRAPHQL_URL"
+          echo ""
+          echo "  RUNNER_OS          = $RUNNER_OS"
+          echo "  RUNNER_ARCH        = $RUNNER_ARCH"
+          echo "  RUNNER_NAME        = $RUNNER_NAME"
+          echo ""
+          echo "  CI                 = $CI  (always 'true' in GitHub Actions)"
+
+
+  # ============================================================================
+  # JOB 4: Dynamic Environment Variables via GITHUB_ENV
+  # ============================================================================
+  # The GITHUB_ENV mechanism allows a step to write variables that become
+  # available as environment variables in ALL SUBSEQUENT STEPS of the same job.
+  #
+  # Syntax: echo "VARIABLE_NAME=value" >> "$GITHUB_ENV"
+  #
+  # IMPORTANT: Variables set via GITHUB_ENV are NOT available in the step that
+  # sets them — only in steps that come after.
+  dynamic-env-vars:
+    name: "4 · Dynamic Env Vars via GITHUB_ENV"
+    runs-on: ubuntu-latest
+    steps:
+      # ── Step 4.1: Compute and export a build version ─────────────────────────
+      # We combine the run number (sequential integer) with the first 7 chars of
+      # the commit SHA to create a unique, human-readable build identifier.
+      - name: "4.1 — Compute BUILD_VERSION and set it in GITHUB_ENV"
+        run: |
+          echo "Computing build version..."
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          BUILD_VERSION="${GITHUB_RUN_NUMBER}.0-${SHORT_SHA}"
+          BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          IS_MAIN_BRANCH="false"
+          if [ "$GITHUB_REF_NAME" = "main" ] || [ "$GITHUB_REF_NAME" = "master" ]; then
+            IS_MAIN_BRANCH="true"
+          fi
+
+          echo "Variables computed:"
+          echo "  BUILD_VERSION = $BUILD_VERSION"
+          echo "  BUILT_AT      = $BUILT_AT"
+          echo "  IS_MAIN_BRANCH= $IS_MAIN_BRANCH"
+          echo ""
+          echo "Now writing to GITHUB_ENV file at: $GITHUB_ENV"
+
+          # Write each variable to the GITHUB_ENV file.
+          # The runner reads this file after each step and adds these to the env
+          # for all subsequent steps.
+          echo "BUILD_VERSION=$BUILD_VERSION"    >> "$GITHUB_ENV"
+          echo "BUILT_AT=$BUILT_AT"              >> "$GITHUB_ENV"
+          echo "IS_MAIN_BRANCH=$IS_MAIN_BRANCH"  >> "$GITHUB_ENV"
+
+          echo "Done! BUILD_VERSION, BUILT_AT, IS_MAIN_BRANCH are now exported."
+          echo ""
+          # NOTE: trying to read BUILD_VERSION here would return empty string
+          # because GITHUB_ENV vars are only available in the NEXT step.
+          echo "Attempting to read BUILD_VERSION in the SAME step (should be empty):"
+          echo "BUILD_VERSION in current step = '$BUILD_VERSION'"
+          # This works because $BUILD_VERSION is a LOCAL bash variable in this step,
+          # not because GITHUB_ENV was processed. To prove GITHUB_ENV behavior,
+          # see step 4.2.
+
+      # ── Step 4.2: Use the dynamically set BUILD_VERSION ─────────────────────
+      # This step runs after 4.1. The runner has processed GITHUB_ENV by now,
+      # so BUILD_VERSION, BUILT_AT, and IS_MAIN_BRANCH are real environment
+      # variables — as if they were in the workflow's env: block.
+      - name: "4.2 — Use BUILD_VERSION (set by previous step)"
+        run: |
+          echo "===== Variables Set via GITHUB_ENV ====="
+          echo ""
+          echo "  BUILD_VERSION  = $BUILD_VERSION"
+          echo "  BUILT_AT       = $BUILT_AT"
+          echo "  IS_MAIN_BRANCH = $IS_MAIN_BRANCH"
+          echo ""
+          echo "These values were computed in step 4.1 and exported via GITHUB_ENV."
+          echo "They are now normal environment variables, indistinguishable from"
+          echo "variables set in the workflow's env: block."
+
+      # ── Step 4.3: Use a dynamically set var in a YAML expression ────────────
+      # Note the difference: $BUILD_VERSION works in the run: script, but
+      # ${{ env.BUILD_VERSION }} also works in YAML fields that run: can't access.
+      - name: "4.3 — Use GITHUB_ENV var in YAML expression: ${{ env.BUILD_VERSION }}"
+        run: |
+          echo "This step's NAME was set using: \${{ env.BUILD_VERSION }}"
+          echo "Value: ${{ env.BUILD_VERSION }}"
+          echo ""
+          echo "Because the step name is resolved before the step executes,"
+          echo "this confirms that GITHUB_ENV values ARE available in the YAML"
+          echo "expression context for steps that come AFTER the step that set them."
+
+      # ── Step 4.4: Set a multi-line variable ─────────────────────────────────
+      # For values containing newlines, use the heredoc delimiter syntax.
+      # The format is:
+      #   echo "VAR_NAME<<DELIMITER"  >> $GITHUB_ENV
+      #   echo "line 1"               >> $GITHUB_ENV
+      #   echo "line 2"               >> $GITHUB_ENV
+      #   echo "DELIMITER"            >> $GITHUB_ENV
+      - name: "4.4 — Set a multi-line GITHUB_ENV variable"
+        run: |
+          echo "Setting CHANGELOG as a multi-line variable..."
+          {
+            echo "CHANGELOG<<CHANGELOG_DELIMITER"
+            echo "## What Changed in Build $BUILD_VERSION"
+            echo ""
+            echo "- Improved performance by 15%"
+            echo "- Fixed memory leak in parser"
+            echo "- Added support for dark mode"
+            echo "CHANGELOG_DELIMITER"
+          } >> "$GITHUB_ENV"
+          echo "Multi-line CHANGELOG written to GITHUB_ENV."
+
+      # ── Step 4.5: Read the multi-line variable ───────────────────────────────
+      - name: "4.5 — Read the multi-line CHANGELOG variable"
+        run: |
+          echo "===== Multi-Line Variable via GITHUB_ENV ====="
+          echo ""
+          echo "CHANGELOG value:"
+          echo "$CHANGELOG"
+          echo ""
+          echo "Notice how the newlines are preserved."
+
+
+  # ============================================================================
+  # JOB 5: Environment Variable Best Practices
+  # ============================================================================
+  # Summarizes best practices and common pitfalls.
+  best-practices-summary:
+    name: "5 · Best Practices Summary"
+    runs-on: ubuntu-latest
+    env:
+      # A practical example: using env vars to avoid repeating values
+      REGISTRY: "ghcr.io"
+      IMAGE_NAME: "${{ github.repository }}"
+      # Note: GITHUB_* vars can be referenced in env: values using ${{ }}
+      SHORT_SHA: "${{ github.sha }}"     # full SHA from context
+    steps:
+      - name: "5.1 — Show environment variable best practices"
+        run: |
+          echo "===== Best Practices ====="
+          echo ""
+          echo "1. DEFINE ONCE, USE MANY:"
+          echo "   REGISTRY   = $REGISTRY"
+          echo "   IMAGE_NAME = $IMAGE_NAME"
+          echo "   Define common values once at the workflow level."
+          echo ""
+          echo "2. USE NAMES THAT CONVEY CONTEXT:"
+          echo "   Good: DOCKERHUB_USERNAME, AWS_REGION, DEPLOY_TARGET"
+          echo "   Bad:  USERNAME, REGION, TARGET"
+          echo ""
+          echo "3. AVOID USING env: FOR SECRETS:"
+          echo "   Do NOT:  env:"
+          echo "              API_KEY: sk-live-abc123"
+          echo "   Do:      env:"
+          echo "              API_KEY: \${{ secrets.API_KEY }}"
+          echo ""
+          echo "4. GITHUB_ENV FOR COMPUTED VALUES:"
+          echo "   Use GITHUB_ENV when a value must be computed at runtime."
+          echo "   Never use GITHUB_ENV for sensitive values."
+          echo ""
+          echo "5. YAML EXPRESSIONS VS SHELL VARIABLES:"
+          echo "   \${{ env.VAR }}  — works in YAML field values (names, with:, if:)"
+          echo "   \$VAR            — works inside shell run: scripts"
+          echo "   Both are equivalent when used in run: commands."

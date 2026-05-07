@@ -1,0 +1,169 @@
+# ============================================================
+# YAML Example 03: Lists (Sequences) and Dictionaries (Mappings)
+# ============================================================
+# Collections are the heart of YAML. GitHub Actions workflows
+# are essentially nested dictionaries containing lists of steps.
+# ============================================================
+
+# ─── BLOCK SEQUENCE (LIST) ───────────────────────────────────────
+# Each item starts with "- " (dash space)
+
+fruits:
+  - apple
+  - banana
+  - cherry
+
+languages:
+  - Python
+  - JavaScript
+  - Go
+  - Rust
+
+ports:
+  - 80
+  - 443
+  - 8080
+  - 3000
+
+# ─── INLINE SEQUENCE (FLOW STYLE) ────────────────────────────────
+# Same as block, but on one line. Used when the list is short.
+
+fruits_inline: [apple, banana, cherry]
+ports_inline: [80, 443, 8080]
+matrix_node_versions: [16, 18, 20]
+
+# ─── BLOCK MAPPING (DICTIONARY) ──────────────────────────────────
+# Key-value pairs nested under a parent key.
+
+person:
+  first_name: Alice
+  last_name: Smith
+  age: 30
+  email: alice@example.com
+
+# ─── INLINE MAPPING (FLOW STYLE) ─────────────────────────────────
+person_inline: {name: Alice, age: 30, city: London}
+
+# ─── LIST OF MAPPINGS ────────────────────────────────────────────
+# VERY important pattern — GitHub Actions "steps" is a list of mappings!
+
+# Each step is a mapping (dictionary) inside a list:
+steps:
+  - name: Checkout code            # mapping item 1
+    uses: actions/checkout@v4
+    with:
+      fetch-depth: 0
+
+  - name: Setup Node.js            # mapping item 2
+    uses: actions/setup-node@v4
+    with:
+      node-version: '20'
+      cache: npm
+
+  - name: Install dependencies     # mapping item 3
+    run: npm ci
+
+  - name: Run tests                # mapping item 4
+    run: npm test
+    env:
+      NODE_ENV: test
+      CI: "true"
+
+# ─── NESTED LISTS ────────────────────────────────────────────────
+
+matrix_config:
+  os:
+    - ubuntu-latest
+    - windows-latest
+    - macos-latest
+  node_versions:
+    - 18
+    - 20
+    - 22
+  include:
+    - os: ubuntu-latest
+      node: 20
+      extra_flag: "--coverage"
+
+# ─── MAPPING WITH LIST VALUES ────────────────────────────────────
+
+workflow_triggers:
+  push_branches:
+    - main
+    - develop
+    - "feature/**"
+  pr_branches:
+    - main
+  ignore_paths:
+    - "docs/**"
+    - "*.md"
+    - ".gitignore"
+
+# ─── DEEPLY NESTED STRUCTURE ─────────────────────────────────────
+# This shows exactly how a GitHub Actions workflow looks in YAML.
+
+workflow:
+  name: CI Pipeline
+  on:
+    push:
+      branches:
+        - main
+        - develop
+  jobs:
+    build:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
+        - name: Setup Node
+          uses: actions/setup-node@v4
+          with:
+            node-version: '20'
+        - name: Install
+          run: npm ci
+        - name: Test
+          run: npm test
+
+    lint:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
+        - name: Lint
+          run: npm run lint
+
+# ─── MIXED TYPES IN LISTS ────────────────────────────────────────
+# Lists can contain different types (though this is uncommon in practice)
+
+mixed:
+  - 42
+  - "hello"
+  - true
+  - null
+  - 3.14
+
+# ─── EMPTY COLLECTIONS ───────────────────────────────────────────
+
+empty_list: []
+empty_dict: {}
+another_empty_list:
+  - []               # list containing an empty list
+
+# ─── PRACTICAL GITHUB ACTIONS PATTERN ────────────────────────────
+# The most common pattern you'll write: steps with env and with
+
+deploy_steps:
+  - name: Configure AWS credentials
+    uses: aws-actions/configure-aws-credentials@v4
+    with:
+      aws-region: us-east-1
+      role-to-assume: "arn:aws:iam::123456789:role/github-actions"
+
+  - name: Deploy to ECS
+    run: |
+      aws ecs update-service \
+        --cluster production \
+        --service my-app \
+        --force-new-deployment
+    env:
+      APP_VERSION: ${{ steps.build.outputs.version }}

@@ -1,0 +1,93 @@
+# =============================================================================
+# Push Trigger Filters — Module 04
+#
+# Demonstrates branch filters and path filters on the push event.
+# When you push to this repository, GitHub checks:
+#   1. Is the branch in the "branches" list? (or not in "branches-ignore"?)
+#   2. Did any files matching "paths" change?
+#   Only if BOTH conditions are true does the workflow run.
+# =============================================================================
+
+name: Push Trigger Demo
+
+on:
+  push:
+    # ─── BRANCH FILTER ────────────────────────────────────────────────────────
+    # Only trigger when pushing to these branches.
+    # Patterns use fnmatch-style globbing:
+    #   *    matches any string except /
+    #   **   matches any string including /
+    #   ?    matches any single character
+    branches:
+      - main                  # exact match: only the "main" branch
+      - develop               # exact match: only the "develop" branch
+      - "release/**"          # pattern: release/1.0, release/2.0-beta, etc.
+      - "hotfix/**"           # pattern: any hotfix branch
+
+    # ─── PATH FILTER ──────────────────────────────────────────────────────────
+    # Only trigger if at least one changed file matches a pattern below.
+    # If ALL changed files are in paths-ignore, the workflow does NOT run.
+    #
+    # Use case: In a monorepo, only run CI when relevant files change.
+    #           A push that only modifies README.md won't waste CI minutes.
+    paths:
+      - "src/**"              # any file under src/ (recursive)
+      - "tests/**"            # any file under tests/
+      - "requirements*.txt"   # requirements.txt or requirements-dev.txt
+      - ".github/workflows/push-triggers.yml"  # this workflow file itself
+
+# Prevent duplicate runs when multiple pushes happen in quick succession.
+concurrency:
+  group: push-demo-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  show-trigger-info:
+    name: Show Push Trigger Info
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Print everything we know about why this workflow triggered.
+      # In real CI, you'd run your actual tests here instead.
+      - name: Print push event details
+        run: |
+          echo "════════════════════════════════════════"
+          echo "  PUSH EVENT TRIGGERED THIS WORKFLOW"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "  Branch:      ${{ github.ref_name }}"
+          echo "  Full ref:    ${{ github.ref }}"
+          echo "  Commit SHA:  ${{ github.sha }}"
+          echo "  Pushed by:   ${{ github.actor }}"
+          echo "  Repository:  ${{ github.repository }}"
+          echo ""
+
+      # Show what files actually changed in this push.
+      # In path-filtered workflows, at least one of these files matched
+      # the paths: filter above — that's why we're running.
+      - name: Show changed files
+        run: |
+          echo "Files changed in this push:"
+          git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "(Cannot diff — possibly first commit)"
+          echo ""
+          echo "Branch filter matched: ${{ github.ref_name }}"
+          echo "If you're seeing this, the path filter ALSO matched."
+
+      - name: Simulate CI check
+        run: |
+          echo "Running CI for branch: ${{ github.ref_name }}"
+          echo "This is where your actual tests/lint/build would go."
+          echo ""
+          # Demonstrate branch-specific behavior
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            echo "On main branch — running full test suite"
+          elif [[ "${{ github.ref_name }}" == develop ]]; then
+            echo "On develop branch — running full test suite"
+          elif [[ "${{ github.ref_name }}" == release/* ]]; then
+            echo "On release branch — running release validation"
+          else
+            echo "On other branch — running standard checks"
+          fi

@@ -1,0 +1,89 @@
+# =============================================================================
+# Caller Workflow — Module 11
+#
+# This workflow CALLS the reusable workflow (reusable-build-test.yml).
+# It demonstrates how to:
+#   - Call a local reusable workflow
+#   - Pass inputs and secrets
+#   - Use outputs from the reusable workflow in subsequent jobs
+# =============================================================================
+
+name: Main CI (Calls Reusable Workflow)
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: main-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ─── CALL THE REUSABLE WORKFLOW ───────────────────────────────────────────
+  # The "uses:" key at the JOB level (not step level) calls a reusable workflow.
+  # This is very different from "uses:" at the step level (which calls an action).
+  #
+  # Syntax for local reusable workflow:
+  #   uses: ./.github/workflows/filename.yml
+  #
+  # Syntax for reusable workflow in another repo:
+  #   uses: org/repo/.github/workflows/filename.yml@main
+  build-and-test:
+    name: Build and Test (via reusable workflow)
+    uses: ./.github/workflows/reusable-build-test.yml   # the reusable workflow file
+    with:
+      # These must match the input names defined in the reusable workflow's
+      # on.workflow_call.inputs section.
+      python-version: "3.14"
+      run-lint: true
+      environment: ${{ github.ref_name == 'main' && 'production' || 'dev' }}
+      working-directory: module-11-reusable-workflows/project
+    secrets:
+      # "inherit" passes ALL secrets from the calling workflow to the reusable one.
+      # This is the simplest approach but grants broad access.
+      # Alternative: pass specific secrets by name.
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      # PYPI_TOKEN not passed — not needed for CI
+
+  # ─── USE REUSABLE WORKFLOW OUTPUTS ────────────────────────────────────────
+  # A job that depends on the reusable workflow call can access its outputs
+  # via needs.<job-id>.outputs.<output-name>.
+  post-ci:
+    name: Post-CI Steps
+    runs-on: ubuntu-latest
+    needs: build-and-test    # wait for the reusable workflow call to complete
+
+    steps:
+      - name: Use outputs from reusable workflow
+        run: |
+          echo "═══════════════════════════════════════════"
+          echo "  POST-CI SUMMARY"
+          echo "═══════════════════════════════════════════"
+          echo ""
+          echo "  Reusable workflow outputs:"
+          echo "    build-version: ${{ needs.build-and-test.outputs.build-version }}"
+          echo "    test-result:   ${{ needs.build-and-test.outputs.test-result }}"
+          echo ""
+          echo "  Branch: ${{ github.ref_name }}"
+          echo "  Commit: ${{ github.sha }}"
+          echo ""
+
+          if [ "${{ needs.build-and-test.outputs.test-result }}" == "success" ]; then
+            echo "  Tests passed ✅"
+            echo "  Version ${{ needs.build-and-test.outputs.build-version }} is ready"
+          else
+            echo "  Tests did not pass ❌"
+            exit 1
+          fi
+
+      # This job only deploys on main branch (after tests pass)
+      - name: Deploy (main branch only)
+        if: github.ref_name == 'main'
+        run: |
+          VERSION="${{ needs.build-and-test.outputs.build-version }}"
+          echo "Deploying version $VERSION to production..."
+          echo "[SIMULATED] Deployment complete"

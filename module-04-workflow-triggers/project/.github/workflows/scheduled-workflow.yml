@@ -1,0 +1,138 @@
+# =============================================================================
+# Scheduled Workflow — Module 04
+#
+# Demonstrates cron-based scheduling with workflow_dispatch fallback.
+# Use case: a "daily health check" that runs automatically on a schedule
+# but can also be triggered manually for immediate verification.
+#
+# CRON SYNTAX REFERENCE:
+#   ┌───── minute (0-59)
+#   │ ┌─── hour (0-23, UTC)
+#   │ │ ┌─ day of month (1-31)
+#   │ │ │ ┌ month (1-12)
+#   │ │ │ │ ┌ day of week (0=Sun, 1=Mon, ..., 6=Sat)
+#   │ │ │ │ │
+#   * * * * *
+# =============================================================================
+
+name: Daily Health Check
+
+on:
+  # ─── SCHEDULE ─────────────────────────────────────────────────────────────
+  # Run automatically at 6:00 AM UTC on Monday through Friday.
+  # "1-5" means Monday (1) through Friday (5). 0 = Sunday, 6 = Saturday.
+  #
+  # Note: GitHub may delay runs by up to 15 minutes during peak load.
+  # All schedule times are in UTC — no timezone support.
+  schedule:
+    - cron: '0 6 * * 1-5'    # weekday mornings
+
+  # ─── MANUAL TRIGGER ───────────────────────────────────────────────────────
+  # Always include workflow_dispatch alongside schedule.
+  # Reasons:
+  #   1. Test the workflow without waiting for the next scheduled time
+  #   2. Run an on-demand check when needed (e.g., before a release)
+  #   3. Re-run after fixing an issue found in the scheduled run
+  workflow_dispatch:
+    inputs:
+      verbose:
+        description: 'Enable verbose output'
+        type: boolean
+        default: false
+
+jobs:
+  health-check:
+    name: Daily Health Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Detect whether this run was triggered by the schedule or manually.
+      # github.event_name == 'schedule' for cron runs
+      # github.event_name == 'workflow_dispatch' for manual runs
+      - name: Identify trigger type
+        run: |
+          echo "════════════════════════════════════════"
+          echo "  HEALTH CHECK STARTING"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "  Triggered by: ${{ github.event_name }}"
+          echo "  Run at:       $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            echo "  Type:  AUTOMATED (cron schedule)"
+            echo "  Schedule: weekdays at 6:00 AM UTC"
+          else
+            echo "  Type:  MANUAL (triggered by ${{ github.actor }})"
+            echo "  Verbose: ${{ inputs.verbose }}"
+          fi
+          echo ""
+
+      # Simulate health checks — replace these with real checks in your project.
+      # Real examples:
+      #   - curl your staging/production API and check the response code
+      #   - Run a quick smoke test suite
+      #   - Check database connectivity
+      #   - Verify SSL certificates haven't expired
+      #   - Check that all required secrets are still valid
+      - name: Check 1 — Application health endpoint
+        run: |
+          echo "Checking application health endpoint..."
+          # In a real workflow:
+          # RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://your-app.com/health)
+          # if [ "$RESPONSE" != "200" ]; then
+          #   echo "FAIL: Health endpoint returned $RESPONSE"
+          #   exit 1
+          # fi
+          echo "  [SIMULATED] GET /health → 200 OK"
+          echo "  Application is healthy"
+
+      - name: Check 2 — Database connectivity
+        run: |
+          echo "Checking database connectivity..."
+          # In a real workflow:
+          # python -c "import psycopg2; conn = psycopg2.connect('$DB_URL'); print('Connected')"
+          echo "  [SIMULATED] Database connection → OK"
+          echo "  Query time: 12ms"
+
+      - name: Check 3 — Python dependencies security scan
+        run: |
+          echo "Checking for dependency vulnerabilities..."
+          pip install pip-audit --quiet
+          # In a real project, run against your requirements.txt:
+          # pip-audit -r requirements.txt
+          echo "  [SIMULATED] pip-audit scan → 0 vulnerabilities found"
+
+      - name: Verbose diagnostics (manual trigger only)
+        # Only run this extra-verbose step when triggered manually with verbose=true
+        if: github.event_name == 'workflow_dispatch' && inputs.verbose == true
+        run: |
+          echo "════════════════════════════════════════"
+          echo "  VERBOSE DIAGNOSTICS"
+          echo "════════════════════════════════════════"
+          python --version
+          pip --version
+          echo ""
+          echo "Disk usage:"
+          df -h /
+          echo ""
+          echo "Memory:"
+          free -h
+
+      - name: Health check summary
+        run: |
+          echo ""
+          echo "════════════════════════════════════════"
+          echo "  HEALTH CHECK COMPLETE"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "  All checks passed!"
+          echo "  Completed at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+          echo "  Next scheduled run: Monday-Friday at 6:00 AM UTC"
+          echo "  Trigger manually: gh workflow run scheduled-workflow.yml"
+          echo ""

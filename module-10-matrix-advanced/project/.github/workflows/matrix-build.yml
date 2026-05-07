@@ -1,0 +1,412 @@
+# ============================================================
+# WORKFLOW: Matrix Build — Cross-Platform, Multi-Version Testing
+# ============================================================
+#
+# PURPOSE:
+#   Demonstrates GitHub Actions' matrix strategy feature by running
+#   the same build and test steps across multiple operating systems
+#   and Node.js versions simultaneously.
+#
+# KEY CONCEPTS DEMONSTRATED:
+#   1. strategy.matrix — generate multiple job instances
+#   2. Multi-dimensional matrix (os × node-version)
+#   3. include — add extra properties to specific combinations
+#   4. exclude — remove unwanted combinations
+#   5. fail-fast — control whether all jobs run on first failure
+#   6. max-parallel — limit simultaneous job count
+#   7. Matrix variable access — ${{ matrix.os }}, etc.
+#   8. GITHUB_STEP_SUMMARY — write formatted job summaries
+#   9. Conditional steps based on matrix values
+
+name: Matrix Build — Cross-Platform
+
+# ============================================================
+# TRIGGERS
+# ============================================================
+# Run on any push or pull_request. In a real project you might
+# restrict to specific branches, but here we want to demonstrate
+# the workflow on any branch for learning purposes.
+on:
+  push:
+    branches:
+      - "**"        # All branches
+  pull_request:
+    branches:
+      - main
+      - develop
+
+# ============================================================
+# CONCURRENCY
+# ============================================================
+# Cancel any in-progress run for the same branch/PR when a new
+# commit is pushed. This saves CI minutes and ensures only the
+# latest code is being tested.
+#
+# EXPLANATION OF THE GROUP EXPRESSION:
+#   - github.workflow: the workflow file name, ensures concurrency
+#     groups are scoped to THIS workflow only
+#   - github.event.pull_request.number: unique per PR
+#   - || github.ref: fallback for push events (not a PR)
+#
+# The result: each PR has its own group, each branch has its own group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# ============================================================
+# JOBS
+# ============================================================
+jobs:
+
+  # ----------------------------------------------------------
+  # JOB: Matrix Build
+  # ----------------------------------------------------------
+  # This single job definition generates MULTIPLE job instances
+  # via the matrix strategy. Each instance runs independently
+  # and in parallel (subject to max-parallel).
+  matrix-build:
+
+    # JOB NAME — using matrix values in the job name makes the
+    # GitHub Actions UI clear and readable. Instead of seeing
+    # "matrix-build (1)", "(2)", "(3)", you see descriptive names.
+    name: "Build — ${{ matrix.os }} / Node ${{ matrix.node-version }}"
+
+    # RUNS-ON uses the matrix.os variable.
+    # Each job instance will use the OS from its matrix row.
+    runs-on: ${{ matrix.os }}
+
+    # ----------------------------------------------------------
+    # MATRIX STRATEGY
+    # ----------------------------------------------------------
+    strategy:
+
+      # FAIL-FAST: false means ALL matrix jobs will run to completion
+      # even if one of them fails. This is useful when you want to
+      # see the full picture of what works and what doesn't across
+      # all platforms/versions.
+      #
+      # fail-fast: true  (default) — cancel all jobs when one fails.
+      #   Good for: saving CI minutes, fast feedback during development
+      #
+      # fail-fast: false — run all jobs regardless.
+      #   Good for: compatibility testing where partial results matter
+      fail-fast: false
+
+      # MAX-PARALLEL: limits how many jobs run simultaneously.
+      # Our matrix generates 7 jobs (9 combinations minus 2 excluded).
+      # With max-parallel: 6, at most 6 run at once; the 7th waits.
+      #
+      # Reasons to limit parallelism:
+      #   - You're hitting GitHub-hosted runner concurrency limits
+      #   - macOS runners are expensive — limit them
+      #   - A shared external resource can't handle N concurrent connections
+      max-parallel: 6
+
+      # MATRIX DIMENSIONS
+      # GitHub Actions computes the Cartesian product:
+      # 3 os × 3 node-versions = 9 base combinations
+      # Then exclude removes 2 → 7 final jobs
+      # Then include adds extra properties to specific jobs
+      matrix:
+
+        # DIMENSION 1: Operating System
+        # Tests our code on all three major OS families
+        os:
+          - ubuntu-latest    # Linux (most common CI environment)
+          - windows-latest   # Windows (important for cross-platform libs)
+          - macos-latest     # macOS (critical for native module authors)
+
+        # DIMENSION 2: Node.js version
+        # LTS versions we support. Node 18 (LTS), 20 (LTS), 22 (Current)
+        node-version:
+          - 18   # Node 18 LTS (Hydrogen) — maintenance LTS
+          - 20   # Node 20 LTS (Iron) — active LTS
+          - 22   # Node 22 (Jod) — current release
+
+        # ----------------------------------------------------------
+        # EXCLUDE — Remove specific combinations
+        # ----------------------------------------------------------
+        # Each entry in the exclude list specifies properties that
+        # must ALL match for a combination to be removed.
+        #
+        # After exclusions:
+        #   ubuntu + 18  ✓
+        #   ubuntu + 20  ✓
+        #   ubuntu + 22  ✓
+        #   windows + 18 ✗ (excluded — known compatibility issues)
+        #   windows + 20 ✓
+        #   windows + 22 ✓
+        #   macos + 18   ✗ (excluded — to save expensive macOS minutes)
+        #   macos + 20   ✓
+        #   macos + 22   ✓
+        # Total: 7 jobs
+        exclude:
+          # Windows + Node 18: has a known issue with our build tool
+          # (in a real project this might be a genuine incompatibility)
+          - os: windows-latest
+            node-version: 18
+
+          # macOS + Node 18: macOS runners are billed at a higher rate.
+          # We only test macOS with the two most recent Node versions.
+          - os: macos-latest
+            node-version: 18
+
+        # ----------------------------------------------------------
+        # INCLUDE — Add extra properties to specific combinations
+        # ----------------------------------------------------------
+        # The include keyword has two behaviors:
+        #
+        # BEHAVIOR 1: If the entry matches an existing combination
+        #   (after excludes), it ADDS the extra properties to that job.
+        #   The combination itself is not added again — just augmented.
+        #
+        # BEHAVIOR 2: If the entry does NOT match any existing combination,
+        #   it is ADDED as a completely new job entry.
+        #
+        # Here we add a 'npm-extra-flags' property to the Windows job
+        # to demonstrate platform-specific configuration:
+        include:
+          # Windows Node 20: add npm-extra-flags for Windows compatibility
+          # This augments the existing windows-latest + node 20 combination
+          - os: windows-latest
+            node-version: 20
+            npm-extra-flags: "--no-optional"  # Skip optional deps on Windows
+
+          # Windows Node 22: same extra flags
+          - os: windows-latest
+            node-version: 22
+            npm-extra-flags: "--no-optional"
+
+          # For all ubuntu and macos combinations, no extra flags needed
+          # (If we don't specify, matrix.npm-extra-flags will be empty string)
+
+          # BEHAVIOR 2 EXAMPLE: Add a brand-new combination not in the base matrix
+          # This adds ubuntu + node 23 as an experimental job
+          # (node-version 23 was not in the original list)
+          - os: ubuntu-latest
+            node-version: 23
+            experimental: true   # We mark it as experimental
+
+    # ----------------------------------------------------------
+    # STEPS
+    # ----------------------------------------------------------
+    steps:
+
+      # STEP 1: Print Matrix Context
+      # Always good to log your environment at the start of a job.
+      # This helps with debugging when something fails on one
+      # specific combination.
+      - name: "Print matrix context"
+        run: |
+          echo "============================================"
+          echo "  MATRIX JOB CONTEXT"
+          echo "============================================"
+          echo "  Operating System : ${{ matrix.os }}"
+          echo "  Node.js Version  : ${{ matrix.node-version }}"
+          echo "  Experimental     : ${{ matrix.experimental || 'false' }}"
+          echo "  NPM Extra Flags  : ${{ matrix.npm-extra-flags || '(none)' }}"
+          echo "============================================"
+
+      # STEP 2: Checkout the repository
+      # actions/checkout@v4 fetches the code into the runner workspace.
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      # STEP 3: Set up Node.js
+      # We use matrix.node-version so each job instance gets the
+      # correct Node.js version for its matrix row.
+      - name: "Setup Node.js ${{ matrix.node-version }}"
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          # cache: 'npm' would normally be here for a real project
+          # with a package-lock.json. Omitted here since this is a demo.
+
+      # STEP 4: Verify Node.js and npm versions
+      # Print the actual installed version to confirm setup worked.
+      - name: "Verify Node.js and npm versions"
+        run: |
+          echo "Node.js version:"
+          node --version
+          echo ""
+          echo "npm version:"
+          npm --version
+
+      # STEP 5: Simulate npm install
+      # In a real workflow this would be: npm ci
+      # We simulate it here since there is no actual package.json in
+      # this demo project directory.
+      #
+      # NOTE: We use ${{ matrix.npm-extra-flags }} — on Windows jobs
+      # that were augmented via include, this will be "--no-optional".
+      # On all other jobs it will be empty (no extra flags).
+      - name: "Simulate npm install (demo)"
+        run: |
+          echo "Running: npm install ${{ matrix.npm-extra-flags }}"
+          echo "Simulating dependency installation..."
+          echo "Dependencies would be installed here in a real project."
+
+      # STEP 6: Simulate running tests
+      # This is where npm test / jest / mocha would run.
+      - name: "Run tests (simulated)"
+        run: |
+          echo "============================================"
+          echo "  RUNNING TEST SUITE"
+          echo "============================================"
+          echo "Platform : ${{ matrix.os }}"
+          echo "Runtime  : Node.js ${{ matrix.node-version }}"
+          echo ""
+          echo "Running unit tests..."
+          echo "  PASS  src/utils.test.js (12 tests)"
+          echo "  PASS  src/api.test.js (8 tests)"
+          echo "  PASS  src/auth.test.js (6 tests)"
+          echo ""
+          echo "Test Suites: 3 passed, 3 total"
+          echo "Tests:       26 passed, 26 total"
+          echo "Time:        2.341 s"
+          echo "============================================"
+
+      # STEP 7: Run build
+      # Simulate a build step
+      - name: "Build application (simulated)"
+        run: |
+          echo "Building application for ${{ matrix.os }}..."
+          echo "Transpiling TypeScript..."
+          echo "Bundling assets..."
+          echo "Build complete!"
+
+      # STEP 8: Platform-specific step
+      # Demonstrate how to run different commands on different OSes.
+      # The 'if' condition checks the matrix.os value.
+      - name: "Linux/macOS specific step"
+        if: matrix.os != 'windows-latest'
+        run: |
+          echo "This step only runs on Linux and macOS"
+          echo "Current user: $(whoami)"
+          echo "Disk space: $(df -h . | tail -1)"
+
+      - name: "Windows specific step"
+        if: matrix.os == 'windows-latest'
+        shell: pwsh  # Use PowerShell on Windows
+        run: |
+          Write-Host "This step only runs on Windows"
+          Write-Host "Current user: $env:USERNAME"
+
+      # STEP 9: Experimental job handling
+      # Jobs with matrix.experimental = true might fail without
+      # blocking the overall workflow status. We demonstrate the
+      # pattern here (actual failure handling requires 'continue-on-error').
+      - name: "Mark experimental check"
+        if: matrix.experimental == true
+        run: |
+          echo "::warning::This is an experimental matrix combination"
+          echo "Node ${{ matrix.node-version }} on ${{ matrix.os }} is experimental"
+
+      # STEP 10: Write Job Summary
+      # GITHUB_STEP_SUMMARY is a file path provided by GitHub Actions.
+      # Anything you append (>>) to this file appears as Markdown
+      # in the job's Summary tab in the GitHub Actions UI.
+      #
+      # This is much more readable than scanning raw log output.
+      - name: "Write job summary"
+        # always() ensures this step runs even if previous steps failed
+        if: always()
+        run: |
+          # Using a heredoc for clean multi-line Markdown
+          cat >> $GITHUB_STEP_SUMMARY << 'SUMMARY_EOF'
+          ## Matrix Build Results
+
+          ### Build Configuration
+
+          | Property | Value |
+          |----------|-------|
+          | **Operating System** | ${{ matrix.os }} |
+          | **Node.js Version** | ${{ matrix.node-version }} |
+          | **Experimental** | ${{ matrix.experimental || 'No' }} |
+          | **NPM Extra Flags** | `${{ matrix.npm-extra-flags || 'none' }}` |
+
+          ### Test Results
+
+          | Suite | Tests | Status |
+          |-------|-------|--------|
+          | Unit Tests | 26 | :white_check_mark: All Passed |
+          | Build | - | :white_check_mark: Success |
+
+          ### Notes
+
+          - This job was generated automatically by the matrix strategy
+          - Combination: `${{ matrix.os }}` + `Node ${{ matrix.node-version }}`
+          SUMMARY_EOF
+
+          # Note: On Windows, GITHUB_STEP_SUMMARY works the same way
+          # (GitHub Actions ensures cross-platform compatibility)
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> :information_source: Job completed at $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+
+  # ----------------------------------------------------------
+  # JOB: Matrix Summary
+  # ----------------------------------------------------------
+  # This job runs AFTER all matrix jobs complete (needs the matrix job).
+  # It aggregates results and writes an overall summary.
+  #
+  # KEY PATTERN: 'needs' with a matrix job name waits for ALL
+  # instances of that matrix job to complete.
+  matrix-summary:
+    name: "Matrix Build — Summary"
+    runs-on: ubuntu-latest
+
+    # Wait for ALL matrix-build job instances to complete.
+    # 'always()' means this summary job runs even if some matrix
+    # jobs failed — we want to report ALL results.
+    needs: matrix-build
+    if: always()
+
+    steps:
+      - name: "Write overall matrix summary"
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # Cross-Platform Build Summary
+
+          ## Matrix Configuration
+
+          | Dimension | Values |
+          |-----------|--------|
+          | Operating Systems | ubuntu-latest, windows-latest, macos-latest |
+          | Node.js Versions | 18, 20, 22 |
+          | Base Combinations | 9 |
+          | After Excludes | 7 |
+          | Extra Combinations | 1 (ubuntu + Node 23, experimental) |
+          | **Total Jobs** | **8** |
+
+          ## Excluded Combinations
+
+          | OS | Node Version | Reason |
+          |----|-------------|--------|
+          | windows-latest | 18 | Known compatibility issue |
+          | macos-latest | 18 | Cost optimization |
+
+          ## Overall Status
+
+          > See individual job summaries above for per-combination details.
+
+          ## What This Demonstrates
+
+          - ✅ Multi-dimensional matrix (os × node-version)
+          - ✅ `fail-fast: false` (all jobs run regardless of failures)
+          - ✅ `max-parallel: 6` (limit concurrent jobs)
+          - ✅ `exclude` removes specific combinations
+          - ✅ `include` adds properties and new combinations
+          - ✅ Matrix variable access in names, runs-on, steps
+          - ✅ Platform-conditional steps
+          - ✅ Job summaries via GITHUB_STEP_SUMMARY
+          EOF
+
+      - name: "Check if all matrix jobs passed"
+        run: |
+          if [[ "${{ needs.matrix-build.result }}" == "success" ]]; then
+            echo "::notice::All matrix build jobs passed!"
+          elif [[ "${{ needs.matrix-build.result }}" == "failure" ]]; then
+            echo "::warning::Some matrix build jobs failed. Check individual job logs."
+          else
+            echo "::notice::Matrix build result: ${{ needs.matrix-build.result }}"
+          fi

@@ -1,0 +1,422 @@
+# =============================================================================
+# Module 06 — GITHUB_TOKEN Demo
+# =============================================================================
+#
+# PURPOSE:
+#   This workflow demonstrates how to use GITHUB_TOKEN to interact with the
+#   GitHub API and the gh CLI. Topics covered:
+#
+#     • Declaring minimum permissions with the `permissions:` block
+#     • Making GitHub REST API calls with GITHUB_TOKEN as a Bearer token
+#     • Using the gh CLI with GH_TOKEN
+#     • Creating a PR comment (only when triggered by a pull_request event)
+#     • Why GITHUB_TOKEN is preferred over Personal Access Tokens (PATs)
+#     • Job-level permission overrides
+#
+# KEY LEARNING POINTS:
+#   1. Always use `permissions:` to restrict GITHUB_TOKEN to what the job needs.
+#   2. GITHUB_TOKEN expires when the workflow run ends — no rotation needed.
+#   3. Pass GITHUB_TOKEN to the gh CLI by setting GH_TOKEN in the step's env:.
+#   4. `pull-requests: write` is only needed in jobs that write to PRs.
+#   5. Jobs without permissions: {} cannot use GITHUB_TOKEN at all — good for
+#      build jobs that should be fully isolated.
+#
+# TRIGGERS:
+#   push    — runs most jobs
+#   pull_request — enables the PR comment job
+#   workflow_dispatch — manual trigger for testing
+# =============================================================================
+
+name: "Module 06 — GITHUB_TOKEN Demo"
+
+# ── Triggers ─────────────────────────────────────────────────────────────────
+on:
+  push:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+# ── Workflow-Level Permissions ────────────────────────────────────────────────
+# BEST PRACTICE: Declare permissions at the workflow level as a baseline,
+# then override at the job level where you need more (or fewer) permissions.
+#
+# This workflow-level block sets the DEFAULT for all jobs. Individual jobs
+# can add or remove permissions.
+#
+# By starting restrictive (contents: read, pull-requests: read) and only
+# upgrading specific jobs, we follow the principle of least privilege.
+permissions:
+  contents: read          # allows: checkout, reading files
+  pull-requests: write    # allows: creating/editing PR comments
+  statuses: write         # allows: creating commit status checks
+  issues: read            # allows: reading issues (not modifying)
+
+# ── Jobs ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ============================================================================
+  # JOB 1: GitHub REST API Calls with GITHUB_TOKEN
+  # ============================================================================
+  # Demonstrates using GITHUB_TOKEN as an Authorization header in curl requests.
+  api-with-curl:
+    name: "1 · REST API via curl + GITHUB_TOKEN"
+    runs-on: ubuntu-latest
+    # This job only needs to read data — use the minimal permission set.
+    # Overriding workflow-level to be even more restrictive.
+    permissions:
+      contents: read
+
+    steps:
+      # ── Step 1.1: List repository labels ────────────────────────────────────
+      # GitHub REST API endpoint: GET /repos/{owner}/{repo}/labels
+      # Authentication: Bearer token in the Authorization header.
+      #
+      # NOTE: ${{ secrets.GITHUB_TOKEN }} is the token value.
+      #       We pass it directly in the curl command as a header value.
+      #       This is safe because GitHub masks the token in logs.
+      - name: "1.1 — List repository labels via REST API"
+        run: |
+          echo "Fetching labels for repository: ${{ github.repository }}"
+          echo ""
+
+          # Make an authenticated GET request to the labels endpoint.
+          # -s = silent (no progress bar)
+          # -f = fail with error on HTTP 4xx/5xx
+          # -L = follow redirects
+          RESPONSE=$(curl -s -f -L \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/labels" \
+            2>&1) || {
+            echo "API call failed. This can happen if:"
+            echo "  - The repository has no labels"
+            echo "  - GITHUB_TOKEN lacks required permissions"
+            echo "  - Rate limit exceeded"
+            RESPONSE="[]"
+          }
+
+          echo "Labels in this repository:"
+          echo "$RESPONSE" | python3 -c "
+          import json, sys
+          labels = json.load(sys.stdin)
+          if not labels:
+              print('  (no labels found)')
+          else:
+              for label in labels:
+                  color = label.get('color', 'unknown')
+                  name  = label.get('name', 'unknown')
+                  desc  = label.get('description', '')
+                  print(f'  [{color}] {name}' + (f' — {desc}' if desc else ''))
+          print(f'Total: {len(labels)} label(s)')
+          " || echo "$RESPONSE"
+
+      # ── Step 1.2: Get repository information ────────────────────────────────
+      - name: "1.2 — Get repository info via REST API"
+        run: |
+          echo "Fetching repository metadata..."
+          echo ""
+
+          REPO_INFO=$(curl -s \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}")
+
+          echo "Repository details:"
+          echo "$REPO_INFO" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          print(f'  Name:        {data.get(\"full_name\", \"unknown\")}')
+          print(f'  Description: {data.get(\"description\") or \"(none)\"}')
+          print(f'  Stars:       {data.get(\"stargazers_count\", 0)}')
+          print(f'  Language:    {data.get(\"language\") or \"(none)\"}')
+          print(f'  Private:     {data.get(\"private\", False)}')
+          print(f'  Default branch: {data.get(\"default_branch\", \"unknown\")}')
+          " || echo "  (Could not parse response)"
+
+      # ── Step 1.3: Check rate limit status ────────────────────────────────────
+      # The rate limit endpoint shows how many API calls are remaining for this
+      # token. GITHUB_TOKEN has a much higher limit than unauthenticated requests.
+      - name: "1.3 — Check GitHub API rate limit"
+        run: |
+          echo "Checking API rate limit for this token..."
+          echo ""
+
+          RATE_LIMIT=$(curl -s \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/rate_limit")
+
+          echo "$RATE_LIMIT" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          core = data.get('rate', {})
+          print(f'  Limit:     {core.get(\"limit\", \"unknown\")} requests/hour')
+          print(f'  Used:      {core.get(\"used\", \"unknown\")}')
+          print(f'  Remaining: {core.get(\"remaining\", \"unknown\")}')
+          import datetime
+          reset_ts = core.get('reset', 0)
+          if reset_ts:
+              reset_time = datetime.datetime.utcfromtimestamp(reset_ts)
+              print(f'  Resets at: {reset_time.strftime(\"%Y-%m-%d %H:%M:%S UTC\")}')
+          " || echo "$RATE_LIMIT"
+
+
+  # ============================================================================
+  # JOB 2: Using GITHUB_TOKEN with the gh CLI
+  # ============================================================================
+  # The gh CLI is GitHub's official command-line tool. It understands GitHub's
+  # data model natively and is often simpler than crafting raw curl commands.
+  # Authenticate it by setting GH_TOKEN in the step's env:.
+  api-with-gh-cli:
+    name: "2 · gh CLI + GITHUB_TOKEN"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      # ── Step 2.1: List recent workflow runs ──────────────────────────────────
+      # gh CLI reads GH_TOKEN automatically when set as an environment variable.
+      # No `gh auth login` step is needed.
+      - name: "2.1 — List recent workflow runs using gh CLI"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Listing recent workflow runs for: ${{ github.repository }}"
+          echo ""
+
+          gh run list \
+            --repo "${{ github.repository }}" \
+            --limit 5 \
+            --json status,conclusion,displayTitle,createdAt,databaseId \
+            --template '{{range .}}  [{{.status}}/{{.conclusion}}] {{.displayTitle}} (id={{.databaseId}}){{"\n"}}{{end}}' \
+            || echo "  (Could not retrieve runs — permission or availability issue)"
+
+      # ── Step 2.2: Show current workflow run info ─────────────────────────────
+      - name: "2.2 — View this workflow run"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "This workflow run's details:"
+          echo ""
+          gh run view "${{ github.run_id }}" \
+            --repo "${{ github.repository }}" \
+            || echo "  (Could not view run details)"
+
+      # ── Step 2.3: Show what permissions GITHUB_TOKEN has ─────────────────────
+      - name: "2.3 — Inspect GITHUB_TOKEN permissions"
+        run: |
+          echo "The permissions for GITHUB_TOKEN in this job are:"
+          echo ""
+          echo "  contents: read"
+          echo ""
+          echo "These were set in the job-level permissions block."
+          echo "Because we only declared 'contents: read', all other permissions"
+          echo "default to 'none' for this job — even if the workflow-level block"
+          echo "would grant more."
+          echo ""
+          echo "To check permissions granted to GITHUB_TOKEN for a given token, call:"
+          echo "  GET https://api.github.com/repos/{owner}/{repo}"
+          echo "  and look at the 'permissions' field in the response."
+
+          # Show the actual permissions via API (the token's scope)
+          REPO_DATA=$(curl -s \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}")
+
+          echo ""
+          echo "Token permissions from API response:"
+          echo "$REPO_DATA" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          perms = data.get('permissions', {})
+          for key, val in sorted(perms.items()):
+              print(f'  {key}: {val}')
+          " || echo "  (Could not parse permissions)"
+
+
+  # ============================================================================
+  # JOB 3: Create a Commit Status Check
+  # ============================================================================
+  # Commit status checks appear on PRs and commits in the GitHub UI.
+  # They show pass/fail/pending indicators next to commits.
+  # Creating them requires the `statuses: write` permission.
+  create-commit-status:
+    name: "3 · Create Commit Status with GITHUB_TOKEN"
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write    # only this permission is needed for status checks
+
+    steps:
+      # ── Step 3.1: Set a pending status at the start ──────────────────────────
+      - name: "3.1 — Set commit status to 'pending'"
+        run: |
+          echo "Creating a 'pending' commit status on ${{ github.sha }}..."
+
+          curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -d '{
+              "state": "pending",
+              "target_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "description": "GITHUB_TOKEN demo is running...",
+              "context": "module-06/github-token-demo"
+            }' | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          print(f'  Status created: {data.get(\"state\", \"unknown\")}')
+          print(f'  Context: {data.get(\"context\", \"unknown\")}')
+          print(f'  URL: {data.get(\"url\", \"unknown\")}')
+          " || echo "  (Status creation failed — check permissions)"
+
+      # ── Step 3.2: Simulate some work ─────────────────────────────────────────
+      - name: "3.2 — Simulate work"
+        run: |
+          echo "Simulating workflow work..."
+          echo "In a real workflow, this would run tests, build steps, etc."
+          echo ""
+          # Use python3's time module to avoid requiring `sleep`
+          python3 -c "import time; time.sleep(2); print('Work complete!')"
+
+      # ── Step 3.3: Set the final status to 'success' ──────────────────────────
+      - name: "3.3 — Set commit status to 'success'"
+        run: |
+          echo "Updating commit status to 'success'..."
+
+          curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -d '{
+              "state": "success",
+              "target_url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "description": "GITHUB_TOKEN demo completed successfully.",
+              "context": "module-06/github-token-demo"
+            }' | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          print(f'  Final state: {data.get(\"state\", \"unknown\")}')
+          print(f'  Description: {data.get(\"description\", \"unknown\")}')
+          " || echo "  (Status update failed)"
+
+          echo ""
+          echo "You can see this status check on the commit at:"
+          echo "  ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+
+
+  # ============================================================================
+  # JOB 4: PR Comment (only runs on pull_request events)
+  # ============================================================================
+  # Creating comments on pull requests requires `pull-requests: write`.
+  # This job is conditionally skipped when not triggered by a PR.
+  pr-comment:
+    name: "4 · PR Comment (pull_request only)"
+    runs-on: ubuntu-latest
+    # Only run this job when a pull request event triggered the workflow.
+    # For push events, github.event.pull_request.number is empty.
+    if: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      pull-requests: write    # only this permission needed to comment
+
+    steps:
+      # ── Step 4.1: Post a comment on the PR ──────────────────────────────────
+      - name: "4.1 — Post comment on pull request"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          echo "Posting a comment on PR #$PR_NUMBER..."
+
+          COMMENT_BODY="## GITHUB_TOKEN Demo Comment
+
+          This comment was automatically created by the \`GITHUB_TOKEN Demo\` workflow.
+
+          **Run details:**
+          - Run ID: \`${{ github.run_id }}\`
+          - Run number: \`${{ github.run_number }}\`
+          - Commit: \`${{ github.sha }}\`
+          - Actor: @${{ github.actor }}
+
+          This demonstrates using \`GITHUB_TOKEN\` with \`pull-requests: write\` permission
+          to interact with pull requests programmatically.
+
+          > Note: The token used here is automatically generated for this run
+          > and expires when the run completes."
+
+          gh pr comment "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --body "$COMMENT_BODY" \
+            || echo "  (Could not post comment — check permissions)"
+
+          echo "Comment posted to PR #$PR_NUMBER."
+
+
+  # ============================================================================
+  # JOB 5: Demonstrate Permission Isolation
+  # ============================================================================
+  # A job with permissions: {} has NO access to GITHUB_TOKEN at all.
+  # This is useful for pure computation jobs that should be fully isolated.
+  no-permissions-job:
+    name: "5 · Job with No Permissions (Isolated)"
+    runs-on: ubuntu-latest
+    # An empty permissions block means GITHUB_TOKEN has NO permissions.
+    # API calls using this token will receive 403 Forbidden.
+    permissions: {}
+
+    steps:
+      - name: "5.1 — Show what happens with no permissions"
+        run: |
+          echo "This job has permissions: {} — meaning GITHUB_TOKEN has no access."
+          echo ""
+          echo "Attempting an API call (will fail with 403)..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}" \
+            || echo "0")
+          echo ""
+          echo "HTTP status code: $HTTP_STATUS"
+          echo ""
+          if [ "$HTTP_STATUS" = "403" ] || [ "$HTTP_STATUS" = "401" ]; then
+            echo "Got 403/401 as expected — the token has no permissions in this job."
+          elif [ "$HTTP_STATUS" = "200" ]; then
+            echo "Got 200 — the repo may be public (public repos allow unauthenticated reads)"
+          else
+            echo "Got HTTP $HTTP_STATUS"
+          fi
+          echo ""
+          echo "LESSON:"
+          echo "  Use 'permissions: {}' for jobs that don't need GitHub API access."
+          echo "  This reduces the blast radius if a malicious dependency runs in"
+          echo "  that job and tries to exfiltrate the token."
+
+      - name: "5.2 — Permissions best practice summary"
+        run: |
+          echo "===== GITHUB_TOKEN Permissions Summary ====="
+          echo ""
+          echo "Declare permissions at TWO levels:"
+          echo ""
+          echo "  Workflow level (applies to all jobs by default):"
+          echo "    permissions:"
+          echo "      contents: read"
+          echo ""
+          echo "  Job level (override per-job as needed):"
+          echo "    jobs:"
+          echo "      deploy:"
+          echo "        permissions:"
+          echo "          contents: write   # can push"
+          echo "          packages: write   # can push Docker images"
+          echo "      test:"
+          echo "        permissions: {}     # fully isolated"
+          echo ""
+          echo "Available permission names:"
+          echo "  actions, checks, contents, deployments, id-token,"
+          echo "  issues, metadata, packages, pull-requests,"
+          echo "  repository-projects, security-events, statuses"
+          echo ""
+          echo "Available permission values: read, write, none"
