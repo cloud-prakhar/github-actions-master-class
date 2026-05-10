@@ -1,0 +1,104 @@
+# =============================================================================
+# Example 01 — Push Trigger
+#
+# WHAT YOU WILL LEARN:
+#   - How to trigger a workflow when code is pushed
+#   - How to limit triggers to specific branches
+#   - How to limit triggers to specific file paths
+#   - How to ignore certain branches using branches-ignore
+#
+# HOW TO USE:
+#   1. Copy this file to .github/workflows/push-trigger.yml in your repo
+#   2. Commit and push to the "main" branch
+#   3. Go to Actions tab — you will see this workflow run
+#   4. Push to a branch named "scratch-*" — the workflow will NOT run
+# =============================================================================
+
+name: "01 - Push Trigger"
+
+# ─── TRIGGER ──────────────────────────────────────────────────────────────────
+# The "push" event fires whenever someone pushes commits to the repository.
+# Without any filters it would run on EVERY push to EVERY branch — usually
+# too noisy. Filters let you narrow it down.
+on:
+  push:
+
+    # ── branches ────────────────────────────────────────────────────────────
+    # Only run when pushing to these branches.
+    # Patterns support wildcards (* matches any character except /,
+    # ** matches any character including /).
+    branches:
+      - main            # exact match — the "main" branch only
+      - "release/**"    # wildcard — any branch starting with "release/"
+      - "feature/**"    # wildcard — any branch starting with "feature/"
+
+    # ── branches-ignore ─────────────────────────────────────────────────────
+    # You can use EITHER "branches" OR "branches-ignore", not both.
+    # Uncomment this block and remove the "branches" block above to try it:
+    #
+    # branches-ignore:
+    #   - "scratch-*"   # skip temporary scratch branches
+    #   - "wip-*"       # skip work-in-progress branches
+
+    # ── paths ───────────────────────────────────────────────────────────────
+    # Only run when at least one of these file paths changed.
+    # Great for monorepos where you only want to rebuild one service.
+    #
+    # Remove this "paths" block if you want the workflow to run on
+    # every push regardless of which files changed.
+    paths:
+      - "src/**"        # any file inside the src/ directory
+      - "tests/**"      # any file inside the tests/ directory
+      - "*.py"          # any .py file at the repo root
+      - "requirements*.txt"   # requirements.txt or requirements-dev.txt
+
+    # ── paths-ignore ────────────────────────────────────────────────────────
+    # Like branches-ignore, this is the inverse of "paths".
+    # Use EITHER "paths" OR "paths-ignore", not both.
+    #
+    # paths-ignore:
+    #   - "docs/**"     # don't rebuild just because a doc changed
+    #   - "*.md"        # skip README edits
+
+# ─── JOBS ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  show-push-info:
+    name: Show Push Information
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out the repository
+      # The runner starts empty — checkout clones your repo onto it.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Print details about the push event
+      # The "github" context holds information about the triggering event.
+      - name: Print push details
+        run: |
+          echo "========================================"
+          echo "  PUSH EVENT DETAILS"
+          echo "========================================"
+          echo "  Pushed by:      ${{ github.actor }}"
+          echo "  Repository:     ${{ github.repository }}"
+          echo "  Branch (ref):   ${{ github.ref }}"
+          echo "  Branch name:    ${{ github.ref_name }}"
+          echo "  Commit SHA:     ${{ github.sha }}"
+          echo "  Commit message: ${{ github.event.head_commit.message }}"
+          echo "  Run number:     ${{ github.run_number }}"
+          echo "========================================"
+
+      # Step 3: List the files that changed in this push
+      # git diff-tree shows which files were modified between the parent
+      # commit and the current commit.
+      - name: List changed files
+        run: |
+          echo "Files changed in this push:"
+          git diff-tree --no-commit-id -r --name-only ${{ github.sha }} || echo "(no diff available — shallow clone)"
+
+      # Step 4: Simulate a build step
+      - name: Simulate build
+        run: |
+          echo "Running build for commit ${{ github.sha }}..."
+          echo "Build complete!"

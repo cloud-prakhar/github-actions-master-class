@@ -1,0 +1,154 @@
+# =============================================================================
+# Example 09 — Matrix Builds
+#
+# WHAT YOU WILL LEARN:
+#   - What a matrix strategy is and why it's useful
+#   - How to test across multiple Python versions in parallel
+#   - How to use "include" to add extra config to specific matrix cells
+#   - How to use "exclude" to skip certain combinations
+#   - How "fail-fast" controls whether one failure cancels everything
+#   - How "max-parallel" limits how many jobs run at once
+#
+# THE CORE IDEA:
+#   Instead of writing one job per Python version, you write ONE job
+#   and let the matrix expand it into N copies that run in parallel.
+#
+#   matrix: { python: [3.12, 3.13, 3.14] }
+#   → automatically creates 3 jobs running in parallel
+#
+# HOW TO USE:
+#   1. Copy this file to .github/workflows/matrix-builds.yml in your repo
+#   2. Push to main — watch the matrix expand into parallel jobs in Actions
+# =============================================================================
+
+name: "09 - Matrix Builds"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# ─── JOBS ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ─── JOB 1: Simple matrix — test across Python versions ─────────────────────
+  test-matrix:
+    name: "Test / Python ${{ matrix.python-version }}"
+    runs-on: ubuntu-latest
+
+    # ── strategy ──────────────────────────────────────────────────────────────
+    # The strategy block defines the matrix and how failures are handled.
+    strategy:
+
+      # ── matrix ────────────────────────────────────────────────────────────
+      # Each key in "matrix:" is a variable. Each value is a list.
+      # The matrix creates one job for EACH COMBINATION of values.
+      #
+      # With one variable and 3 values → 3 jobs.
+      # With two variables [3 × 2] → 6 jobs.
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+
+      # ── fail-fast ─────────────────────────────────────────────────────────
+      # true (default):  if any matrix job fails, cancel all remaining jobs.
+      #                  Saves compute, but you lose results for other versions.
+      # false:           let all matrix jobs run to completion even if one fails.
+      #                  Gives you the full picture of which versions are broken.
+      fail-fast: false
+
+      # ── max-parallel ──────────────────────────────────────────────────────
+      # Caps how many matrix jobs run simultaneously.
+      # Useful if you have many matrix combinations and want to avoid
+      # flooding the runner queue or hitting API rate limits.
+      # Default: GitHub runs as many as resources allow.
+      max-parallel: 3
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show Python version
+        run: |
+          echo "========================================"
+          echo "  MATRIX CELL INFO"
+          echo "========================================"
+          echo "  Matrix python-version: ${{ matrix.python-version }}"
+          echo "  Actual Python:         $(python --version)"
+          echo "  pip version:           $(pip --version)"
+          echo "========================================"
+
+      - name: Simulate tests
+        run: |
+          echo "Running tests on Python ${{ matrix.python-version }}..."
+          python -c "
+          import sys
+          print(f'Python {sys.version}')
+          print('All tests passed!')
+          "
+
+  # ─── JOB 2: Multi-variable matrix ───────────────────────────────────────────
+  # A matrix with TWO variables creates all combinations automatically.
+  multi-var-matrix:
+    name: "Multi / Python ${{ matrix.python-version }} on ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3 Python versions × 2 OS = 6 jobs running in parallel
+        python-version: ["3.12", "3.14"]
+        os: [ubuntu-latest, macos-latest]
+
+        # ── include ───────────────────────────────────────────────────────
+        # "include" adds EXTRA keys to specific matrix combinations,
+        # or adds entirely new combinations not in the Cartesian product.
+        #
+        # This example adds a "label" key to specific cells so steps
+        # can use it for display or conditional logic.
+        include:
+          # Add a label to the ubuntu + 3.14 combination
+          - os: ubuntu-latest
+            python-version: "3.14"
+            label: "primary"      # only this cell gets label: primary
+
+          # Add a completely new combination (windows + 3.13) that wouldn't
+          # appear in the 2×2 Cartesian product above
+          - os: windows-latest
+            python-version: "3.13"
+            label: "windows-extra"
+
+        # ── exclude ───────────────────────────────────────────────────────
+        # "exclude" removes specific combinations from the matrix.
+        # Use this when a particular combination is known to be broken
+        # or irrelevant.
+        exclude:
+          # Skip macOS + 3.12 (hypothetically unsupported)
+          - os: macos-latest
+            python-version: "3.12"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Show matrix info
+        run: |
+          echo "OS:     ${{ matrix.os }}"
+          echo "Python: ${{ matrix.python-version }}"
+          echo "Label:  ${{ matrix.label }}"   # empty string if not set for this cell
+
+      - name: Run on primary cell only
+        if: matrix.label == 'primary'
+        run: echo "This step only runs on the 'primary' matrix cell (ubuntu + 3.14)"
+
+      - name: Simulate test
+        run: python --version

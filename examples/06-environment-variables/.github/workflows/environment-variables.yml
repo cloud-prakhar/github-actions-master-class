@@ -1,0 +1,197 @@
+# =============================================================================
+# Example 06 — Environment Variables
+#
+# WHAT YOU WILL LEARN:
+#   - The three scopes of environment variables (workflow, job, step)
+#   - How inner scopes override outer scopes
+#   - How to use GitHub's built-in environment variables ($GITHUB_*)
+#   - How to safely inject secrets as environment variables
+#   - How to set dynamic variables using $GITHUB_ENV
+#
+# HOW TO USE:
+#   1. Copy this file to .github/workflows/environment-variables.yml in your repo
+#   2. Push to main — no secrets needed for most steps
+#   3. The "secret injection" step shows the PATTERN; you'd need to add
+#      a secret called MY_API_KEY in repo Settings → Secrets → Actions
+# =============================================================================
+
+name: "06 - Environment Variables"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# ─── SCOPE 1: WORKFLOW-LEVEL env ──────────────────────────────────────────────
+# Variables defined here are available to EVERY job and step.
+# Think of this as global configuration for the whole workflow.
+env:
+  APP_ENV: "production"           # application environment
+  PYTHON_VERSION: "3.14"          # shared version pin
+  APP_NAME: "my-app"              # application name used across steps
+  LOG_LEVEL: "info"               # default log level (overridden below)
+
+# ─── JOBS ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ─── JOB 1: Show variable scopes ────────────────────────────────────────────
+  variable-scopes:
+    name: Variable Scopes Demo
+    runs-on: ubuntu-latest
+
+    # ── SCOPE 2: JOB-LEVEL env ────────────────────────────────────────────────
+    # Variables here are available to all steps in this job.
+    # They OVERRIDE workflow-level variables with the same name.
+    env:
+      LOG_LEVEL: "debug"          # overrides workflow-level LOG_LEVEL ("info")
+      JOB_ID: "variable-scopes"   # unique to this job
+
+    steps:
+      - name: Show workflow and job level vars
+        run: |
+          echo "========================================"
+          echo "  WORKFLOW + JOB SCOPE VARIABLES"
+          echo "========================================"
+          echo "  APP_ENV:        $APP_ENV"        # from workflow scope
+          echo "  PYTHON_VERSION: $PYTHON_VERSION"  # from workflow scope
+          echo "  APP_NAME:       $APP_NAME"        # from workflow scope
+          echo "  LOG_LEVEL:      $LOG_LEVEL"        # JOB overrides workflow → "debug"
+          echo "  JOB_ID:         $JOB_ID"           # job scope only
+          echo "========================================"
+
+      # ── SCOPE 3: STEP-LEVEL env ──────────────────────────────────────────
+      # Variables here are ONLY available within this single step.
+      # They OVERRIDE job-level and workflow-level variables with the same name.
+      - name: Show step-level override
+        env:
+          LOG_LEVEL: "warning"          # overrides job-level "debug"
+          STEP_ONLY_VAR: "only-here"    # exists nowhere else
+        run: |
+          echo "========================================"
+          echo "  STEP SCOPE VARIABLES"
+          echo "========================================"
+          echo "  LOG_LEVEL:      $LOG_LEVEL"       # STEP overrides job → "warning"
+          echo "  STEP_ONLY_VAR:  $STEP_ONLY_VAR"   # only in this step
+          echo "  APP_NAME:       $APP_NAME"         # still visible from workflow scope
+          echo "========================================"
+
+      - name: STEP_ONLY_VAR is gone here
+        run: |
+          echo "STEP_ONLY_VAR is now empty: '$STEP_ONLY_VAR'"
+          echo "LOG_LEVEL is back to job level: '$LOG_LEVEL'"
+
+  # ─── JOB 2: GitHub built-in variables ───────────────────────────────────────
+  builtin-vars:
+    name: GitHub Built-in Variables
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Show GitHub built-in environment variables
+        run: |
+          echo "========================================"
+          echo "  GITHUB BUILT-IN VARIABLES"
+          echo "========================================"
+          echo ""
+          echo "--- Workspace & Runner ---"
+          echo "  GITHUB_WORKSPACE:     $GITHUB_WORKSPACE"
+          echo "  RUNNER_TEMP:          $RUNNER_TEMP"
+          echo "  RUNNER_OS:            $RUNNER_OS"
+          echo ""
+          echo "--- Identity ---"
+          echo "  GITHUB_ACTOR:         $GITHUB_ACTOR"
+          echo "  GITHUB_REPOSITORY:    $GITHUB_REPOSITORY"
+          echo "  GITHUB_REPOSITORY_OWNER: $GITHUB_REPOSITORY_OWNER"
+          echo ""
+          echo "--- Run Info ---"
+          echo "  GITHUB_WORKFLOW:      $GITHUB_WORKFLOW"
+          echo "  GITHUB_RUN_ID:        $GITHUB_RUN_ID"
+          echo "  GITHUB_RUN_NUMBER:    $GITHUB_RUN_NUMBER"
+          echo "  GITHUB_JOB:           $GITHUB_JOB"
+          echo ""
+          echo "--- Git Info ---"
+          echo "  GITHUB_REF:           $GITHUB_REF"
+          echo "  GITHUB_REF_NAME:      $GITHUB_REF_NAME"
+          echo "  GITHUB_SHA:           $GITHUB_SHA"
+          echo "  GITHUB_BASE_REF:      $GITHUB_BASE_REF"
+          echo "  GITHUB_HEAD_REF:      $GITHUB_HEAD_REF"
+          echo ""
+          echo "--- Special Files ---"
+          echo "  GITHUB_ENV:           $GITHUB_ENV"
+          echo "  GITHUB_OUTPUT:        $GITHUB_OUTPUT"
+          echo "  GITHUB_STEP_SUMMARY:  $GITHUB_STEP_SUMMARY"
+          echo "========================================"
+
+  # ─── JOB 3: Dynamic variables with GITHUB_ENV ───────────────────────────────
+  dynamic-vars:
+    name: Dynamic Variables (GITHUB_ENV)
+    runs-on: ubuntu-latest
+
+    steps:
+      # Writing to $GITHUB_ENV makes a variable available in ALL subsequent
+      # steps of the current job (but NOT in other jobs).
+      # Format: echo "VAR_NAME=value" >> $GITHUB_ENV
+      - name: Generate dynamic values
+        run: |
+          # Compute values at runtime
+          BUILD_DATE=$(date -u '+%Y-%m-%d')
+          BUILD_ID="build-${{ github.run_number }}-$(date +%s)"
+          GIT_SHORT_SHA="${{ github.sha }}"
+          GIT_SHORT_SHA="${GIT_SHORT_SHA:0:7}"   # first 7 chars of SHA
+
+          echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
+          echo "BUILD_ID=$BUILD_ID" >> $GITHUB_ENV
+          echo "GIT_SHORT_SHA=$GIT_SHORT_SHA" >> $GITHUB_ENV
+
+          echo "Variables written to GITHUB_ENV:"
+          echo "  BUILD_DATE=$BUILD_DATE"
+          echo "  BUILD_ID=$BUILD_ID"
+          echo "  GIT_SHORT_SHA=$GIT_SHORT_SHA"
+
+      # These variables are now available in all steps below
+      - name: Use dynamic variables
+        run: |
+          echo "========================================"
+          echo "  DYNAMIC VARIABLES"
+          echo "========================================"
+          echo "  BUILD_DATE:    $BUILD_DATE"
+          echo "  BUILD_ID:      $BUILD_ID"
+          echo "  SHORT_SHA:     $GIT_SHORT_SHA"
+          echo "========================================"
+
+      - name: Use variables in another step
+        run: |
+          echo "Still available in this step too:"
+          echo "  Build $BUILD_ID built from commit $GIT_SHORT_SHA on $BUILD_DATE"
+
+  # ─── JOB 4: Secrets pattern ─────────────────────────────────────────────────
+  secret-pattern:
+    name: Secret Injection Pattern
+    runs-on: ubuntu-latest
+
+    steps:
+      # ALWAYS inject secrets as environment variables — never inline them.
+      #
+      # BAD:  run: curl -H "Authorization: ${{ secrets.MY_API_KEY }}" ...
+      #   → The secret value appears in the workflow YAML (logged if echoed)
+      #
+      # GOOD: inject via env:, then reference $MY_API_KEY in the shell.
+      #   → GitHub masks the secret in logs automatically.
+      - name: Use a secret safely (pattern demo)
+        env:
+          # This would reference a real secret from repo Settings → Secrets → Actions
+          # For this demo, it will be empty — that's fine, it shows the pattern.
+          MY_API_KEY: ${{ secrets.MY_API_KEY }}
+        run: |
+          echo "Secret injection pattern:"
+          echo ""
+          echo "  The secret is available as: \$MY_API_KEY"
+          echo "  GitHub automatically masks it in logs."
+          echo ""
+          if [ -z "$MY_API_KEY" ]; then
+            echo "  MY_API_KEY is not set (add it in Settings → Secrets → Actions)"
+          else
+            echo "  MY_API_KEY is set! (value is masked in logs)"
+          fi
+          echo ""
+          echo "  Never do: curl -u \"\${{ secrets.MY_API_KEY }}\" ..."
+          echo "  Always do: inject into env:, then use \$MY_API_KEY"

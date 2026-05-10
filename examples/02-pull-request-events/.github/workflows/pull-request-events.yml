@@ -1,0 +1,142 @@
+# =============================================================================
+# Example 02 — Pull Request Events
+#
+# WHAT YOU WILL LEARN:
+#   - How to trigger a workflow on pull request activity
+#   - The different PR activity types (opened, synchronize, closed, labeled)
+#   - How to read PR metadata from the event context
+#   - How to run steps conditionally based on PR state
+#
+# HOW TO USE:
+#   1. Copy this file to .github/workflows/pull-request-events.yml in your repo
+#   2. Open a pull request — watch the "opened" steps run
+#   3. Push a new commit to the PR branch — watch "synchronize" steps run
+#   4. Add a label to the PR — watch "labeled" steps run
+#   5. Merge the PR — watch the "closed + merged" steps run
+# =============================================================================
+
+name: "02 - Pull Request Events"
+
+# ─── TRIGGER ──────────────────────────────────────────────────────────────────
+# "pull_request" fires when PR activity occurs.
+# You choose WHICH types of activity trigger the workflow via "types:".
+#
+# Common activity types:
+#   opened        — a new PR was created
+#   synchronize   — a new commit was pushed to the PR branch
+#   closed        — the PR was closed (merged OR dismissed without merging)
+#   labeled       — a label was added to the PR
+#   unlabeled     — a label was removed
+#   reopened      — a closed PR was reopened
+#   ready_for_review — draft PR was marked ready
+#   review_requested — a reviewer was requested
+#
+# DEFAULT (if you omit "types:"): opened, synchronize, reopened
+on:
+  pull_request:
+    types:
+      - opened          # fires when PR is first created
+      - synchronize     # fires when commits are pushed to the PR branch
+      - closed          # fires when PR is merged or closed
+      - labeled         # fires when a label is added
+
+    # Limit to PRs targeting these base branches
+    branches:
+      - main
+      - "release/**"
+
+# ─── JOBS ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ─── JOB 1: Print PR Info ───────────────────────────────────────────────────
+  # This job always runs on any PR activity. It shows you what's in the
+  # pull_request event context.
+  print-pr-info:
+    name: Print PR Information
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Print PR details
+        run: |
+          echo "========================================"
+          echo "  PULL REQUEST EVENT DETAILS"
+          echo "========================================"
+          echo "  Activity type:   ${{ github.event_name }} / ${{ github.event.action }}"
+          echo "  PR number:       #${{ github.event.pull_request.number }}"
+          echo "  PR title:        ${{ github.event.pull_request.title }}"
+          echo "  PR author:       ${{ github.event.pull_request.user.login }}"
+          echo "  Source branch:   ${{ github.head_ref }}"
+          echo "  Target branch:   ${{ github.base_ref }}"
+          echo "  Draft?:          ${{ github.event.pull_request.draft }}"
+          echo "  Mergeable?:      ${{ github.event.pull_request.mergeable }}"
+          echo "  Additions:       ${{ github.event.pull_request.additions }}"
+          echo "  Deletions:       ${{ github.event.pull_request.deletions }}"
+          echo "  Changed files:   ${{ github.event.pull_request.changed_files }}"
+          echo "========================================"
+
+  # ─── JOB 2: Run checks on PR code ───────────────────────────────────────────
+  # These steps only run when the PR is opened or updated (not on close/label).
+  pr-checks:
+    name: PR Code Checks
+    runs-on: ubuntu-latest
+
+    # Only run on "opened" and "synchronize" — not when a label is added
+    # or when the PR is closed, since there's no new code to check.
+    if: github.event.action == 'opened' || github.event.action == 'synchronize'
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+
+      - name: Simulate linting
+        run: |
+          echo "Running linter on PR #${{ github.event.pull_request.number }}..."
+          echo "Checking source branch: ${{ github.head_ref }}"
+          echo "Lint passed!"
+
+      - name: Simulate tests
+        run: |
+          echo "Running tests..."
+          echo "All tests passed!"
+
+  # ─── JOB 3: Handle merged PR ────────────────────────────────────────────────
+  # Only runs when the PR is MERGED (closed AND merge == true).
+  # A PR can be "closed" without merging (abandoned), so we check both.
+  on-merged:
+    name: Post-Merge Notification
+    runs-on: ubuntu-latest
+
+    # github.event.pull_request.merged is "true" (string) only when merged
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+
+    steps:
+      - name: Celebrate the merge
+        run: |
+          echo "PR #${{ github.event.pull_request.number }} was merged!"
+          echo "Merged by: ${{ github.event.pull_request.merged_by.login }}"
+          echo "Merged into: ${{ github.base_ref }}"
+          echo "Triggering deployment pipeline..."
+
+  # ─── JOB 4: Handle labeled PR ───────────────────────────────────────────────
+  # Only runs when a label is added, and specifically only for "urgent" label.
+  on-labeled:
+    name: Handle Label Added
+    runs-on: ubuntu-latest
+
+    if: github.event.action == 'labeled'
+
+    steps:
+      - name: Show label details
+        run: |
+          echo "Label added to PR #${{ github.event.pull_request.number }}"
+          echo "Label name: ${{ github.event.label.name }}"
+          echo "Label color: #${{ github.event.label.color }}"
+
+      - name: Special action for "urgent" label
+        if: github.event.label.name == 'urgent'
+        run: |
+          echo "URGENT label detected! Notifying on-call team..."
+          echo "(In a real workflow this would send a Slack/PagerDuty alert)"

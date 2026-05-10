@@ -1,0 +1,153 @@
+# =============================================================================
+# Example 03 — Scheduled (Cron) Trigger
+#
+# WHAT YOU WILL LEARN:
+#   - How to run a workflow on a time-based schedule
+#   - How to write cron expressions
+#   - Practical uses: nightly builds, daily reports, weekly cleanup
+#   - How to combine schedule with workflow_dispatch (manual + auto)
+#
+# HOW TO USE:
+#   1. Copy this file to .github/workflows/scheduled-cron.yml in your repo
+#   2. Commit and push — GitHub will pick up the schedule
+#   3. GitHub runs scheduled workflows on the default branch ONLY
+#   4. To test immediately: use workflow_dispatch (Actions tab → Run workflow)
+#
+# IMPORTANT: GitHub may delay scheduled runs by up to 15 minutes during
+# high-traffic periods. Don't rely on sub-minute precision.
+#
+# NOTE: Scheduled workflows only run on the default branch (usually "main").
+# If you push this file to a feature branch, the schedule won't activate
+# until it's merged to main.
+# =============================================================================
+
+name: "03 - Scheduled Cron"
+
+# ─── CRON EXPRESSION FORMAT ───────────────────────────────────────────────────
+#
+#   ┌──────── minute       (0-59)
+#   │ ┌────── hour         (0-23, UTC)
+#   │ │ ┌──── day of month (1-31)
+#   │ │ │ ┌── month        (1-12)
+#   │ │ │ │ ┌ day of week  (0-6, Sunday=0)
+#   │ │ │ │ │
+#   * * * * *
+#
+#   Special characters:
+#     *    — every value (wildcard)
+#     ,    — list:  "1,3,5"  = at 1, 3, and 5
+#     -    — range: "1-5"    = from 1 through 5
+#     /    — step:  "*/6"    = every 6 units
+#
+#   Common examples:
+#     "0 6 * * *"       — every day at 06:00 UTC
+#     "0 0 * * 1"       — every Monday at midnight UTC
+#     "*/15 * * * *"    — every 15 minutes (minimum GitHub allows)
+#     "0 9-17 * * 1-5"  — every hour from 9–17 on weekdays
+
+on:
+  # ── Scheduled runs ──────────────────────────────────────────────────────────
+  schedule:
+    # Run every day at 02:00 UTC (good for nightly builds)
+    - cron: "0 2 * * *"
+
+    # You can add multiple schedules — each is an independent trigger.
+    # Example: also run every Monday at 08:00 UTC (weekly report)
+    # - cron: "0 8 * * 1"
+
+  # ── Manual trigger ──────────────────────────────────────────────────────────
+  # Always pair schedule with workflow_dispatch so you can run it manually
+  # to test without waiting for the clock.
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why are you running this manually?"
+        type: string
+        default: "Testing the scheduled workflow"
+
+# ─── JOBS ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ─── JOB 1: Nightly report ──────────────────────────────────────────────────
+  nightly-report:
+    name: Nightly Health Report
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Show when and why this run happened
+      - name: Print schedule context
+        run: |
+          echo "========================================"
+          echo "  SCHEDULED RUN DETAILS"
+          echo "========================================"
+          echo "  Triggered by:   ${{ github.event_name }}"
+          echo "  Run time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "  Branch:         ${{ github.ref_name }}"
+          echo "  Commit:         ${{ github.sha }}"
+
+          # When triggered by workflow_dispatch, show the manual reason
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "  Manual reason:  ${{ github.event.inputs.reason }}"
+          fi
+          echo "========================================"
+
+      # Simulate a nightly health check
+      - name: Run health checks
+        run: |
+          echo "Checking repository health..."
+          echo ""
+
+          # Count files by type
+          echo "File counts:"
+          echo "  .yml files:  $(find . -name '*.yml' | wc -l)"
+          echo "  .py files:   $(find . -name '*.py' | wc -l)"
+          echo "  .md files:   $(find . -name '*.md' | wc -l)"
+          echo ""
+          echo "Health check complete!"
+
+      # Simulate sending a report
+      - name: Send nightly report
+        run: |
+          echo "Sending nightly report..."
+          echo "Recipient: team@example.com"
+          echo "Subject: Nightly Build Report — $(date -u '+%Y-%m-%d')"
+          echo ""
+          echo "(In a real workflow this step would use an action like"
+          echo " 'dawidd6/action-send-mail' or call a webhook.)"
+
+  # ─── JOB 2: Weekly cleanup (only on Mondays) ────────────────────────────────
+  # This demonstrates how to add extra conditions when you have multiple
+  # cron schedules — you can use the current day of week to branch logic.
+  weekly-cleanup:
+    name: Weekly Cleanup (Mondays only)
+    runs-on: ubuntu-latest
+
+    # Only run the cleanup on Mondays.
+    # date +%u returns 1 for Monday, 7 for Sunday.
+    # This approach works even if you only have one cron entry — just
+    # guard the step with a day check.
+    steps:
+      - name: Check if today is Monday
+        id: day-check
+        run: |
+          DAY=$(date +%u)   # 1=Monday, 7=Sunday
+          echo "Today is day number: $DAY"
+          if [ "$DAY" = "1" ]; then
+            echo "is_monday=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_monday=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run weekly cleanup
+        if: steps.day-check.outputs.is_monday == 'true'
+        run: |
+          echo "It's Monday — running weekly cleanup..."
+          echo "Pruning stale branches, clearing caches..."
+          echo "Cleanup complete!"
+
+      - name: Skip cleanup
+        if: steps.day-check.outputs.is_monday != 'true'
+        run: echo "Not Monday — skipping weekly cleanup."

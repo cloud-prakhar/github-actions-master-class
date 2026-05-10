@@ -1,0 +1,161 @@
+# =============================================================================
+# Example 04 — Manual Dispatch (workflow_dispatch)
+#
+# WHAT YOU WILL LEARN:
+#   - How to add a "Run workflow" button to your workflow
+#   - How to define input parameters (string, boolean, choice)
+#   - How to read input values inside steps
+#   - How to use inputs to control what the workflow does
+#
+# HOW TO USE:
+#   1. Copy this file to .github/workflows/manual-dispatch.yml in your repo
+#   2. Push to main (workflow_dispatch only activates on the default branch)
+#   3. Go to Actions tab → select "04 - Manual Dispatch" → click "Run workflow"
+#   4. Fill in the form and click "Run workflow" — watch it use your inputs
+# =============================================================================
+
+name: "04 - Manual Dispatch"
+
+# ─── TRIGGER ──────────────────────────────────────────────────────────────────
+# "workflow_dispatch" adds a "Run workflow" button in the GitHub Actions UI.
+# The "inputs:" section defines the form fields shown to the user.
+on:
+  workflow_dispatch:
+    inputs:
+
+      # ── Input type: string ─────────────────────────────────────────────────
+      # A free-text box. User types anything.
+      target_environment:
+        description: "Which environment to deploy to?"
+        type: string
+        required: true
+        default: "staging"    # pre-filled value in the UI
+
+      # ── Input type: choice ─────────────────────────────────────────────────
+      # A dropdown. User picks one option from the list.
+      log_level:
+        description: "How verbose should logging be?"
+        type: choice
+        options:
+          - info      # shown first = default selection
+          - debug
+          - warning
+          - error
+        required: true
+
+      # ── Input type: boolean ────────────────────────────────────────────────
+      # A checkbox. Value is the string "true" or "false" (not a real boolean).
+      run_tests:
+        description: "Run tests before deploying?"
+        type: boolean
+        default: true
+
+      # ── Input type: string with no default ────────────────────────────────
+      # When left blank by the user, the value is an empty string "".
+      release_notes:
+        description: "Optional release notes for this deployment"
+        type: string
+        required: false
+
+# ─── JOBS ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ─── JOB 1: Show inputs ─────────────────────────────────────────────────────
+  show-inputs:
+    name: Show Workflow Inputs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Print all inputs
+        run: |
+          echo "========================================"
+          echo "  MANUAL DISPATCH INPUTS"
+          echo "========================================"
+          echo "  target_environment: ${{ github.event.inputs.target_environment }}"
+          echo "  log_level:          ${{ github.event.inputs.log_level }}"
+          echo "  run_tests:          ${{ github.event.inputs.run_tests }}"
+          echo "  release_notes:      ${{ github.event.inputs.release_notes }}"
+          echo "  triggered by:       ${{ github.actor }}"
+          echo "========================================"
+
+  # ─── JOB 2: Conditionally run tests ─────────────────────────────────────────
+  # This job only runs when the user checked "run_tests".
+  # NOTE: boolean inputs arrive as the STRING "true" or "false", so compare
+  # against the string value, not a real boolean.
+  run-tests:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: show-inputs
+
+    if: github.event.inputs.run_tests == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run test suite
+        run: |
+          echo "Tests enabled — running test suite..."
+          echo "Log level: ${{ github.event.inputs.log_level }}"
+          echo ""
+          echo "[ PASS ] test_connection"
+          echo "[ PASS ] test_auth"
+          echo "[ PASS ] test_health_endpoint"
+          echo ""
+          echo "All tests passed!"
+
+  # ─── JOB 3: Deploy ──────────────────────────────────────────────────────────
+  # Deploy step uses the environment input to decide where to deploy.
+  deploy:
+    name: Deploy to ${{ github.event.inputs.target_environment }}
+    runs-on: ubuntu-latest
+    needs: [show-inputs, run-tests]
+
+    # Always run deploy even if run-tests was skipped (because run_tests=false).
+    # Without this, "needs" would fail if run-tests was skipped.
+    if: always() && needs.show-inputs.result == 'success'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Use the choice input to set verbosity
+      - name: Configure logging
+        run: |
+          echo "Setting log level to: ${{ github.event.inputs.log_level }}"
+          case "${{ github.event.inputs.log_level }}" in
+            debug)   echo "DEBUG logging enabled — verbose output" ;;
+            info)    echo "INFO logging enabled — standard output" ;;
+            warning) echo "WARNING logging — reduced output" ;;
+            error)   echo "ERROR logging only — minimal output" ;;
+          esac
+
+      # Use the string input — with a guard for empty/missing value
+      - name: Show release notes
+        run: |
+          NOTES="${{ github.event.inputs.release_notes }}"
+          if [ -z "$NOTES" ]; then
+            echo "No release notes provided."
+          else
+            echo "Release notes: $NOTES"
+          fi
+
+      - name: Deploy
+        run: |
+          ENV="${{ github.event.inputs.target_environment }}"
+          echo "Deploying to environment: $ENV"
+
+          case "$ENV" in
+            production)
+              echo "Production deploy — extra caution enabled"
+              echo "Running smoke tests post-deploy..."
+              ;;
+            staging)
+              echo "Staging deploy — standard procedure"
+              ;;
+            *)
+              echo "Custom environment: $ENV"
+              ;;
+          esac
+
+          echo "Deploy to $ENV complete!"

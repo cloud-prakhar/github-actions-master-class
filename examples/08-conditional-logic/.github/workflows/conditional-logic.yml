@@ -1,0 +1,185 @@
+# =============================================================================
+# Example 08 — Conditional Logic
+#
+# WHAT YOU WILL LEARN:
+#   - How to use "if:" at the job and step level
+#   - Status functions: success(), failure(), cancelled(), always()
+#   - Comparing contexts: branch, event name, actor, labels
+#   - How to combine conditions with && and ||
+#   - How to skip vs cancel steps
+#
+# HOW TO USE:
+#   1. Copy this file to .github/workflows/conditional-logic.yml in your repo
+#   2. Push to "main" — notice some steps run, others are skipped
+#   3. Push to a feature branch — see different steps run
+#   4. Manually trigger with workflow_dispatch to see that path
+# =============================================================================
+
+name: "08 - Conditional Logic"
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+# ─── JOBS ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ─── JOB 1: Branch-based conditions ─────────────────────────────────────────
+  branch-conditions:
+    name: Branch-Based Conditions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Condition: exact branch match ────────────────────────────────────
+      # github.ref is the full ref: "refs/heads/main"
+      # github.ref_name is just the branch/tag name: "main"
+      - name: Only on main branch
+        if: github.ref_name == 'main'
+        run: echo "Running on main — this is a production-worthy commit!"
+
+      # ── Condition: feature branch (startsWith) ────────────────────────────
+      - name: Only on feature branches
+        if: startsWith(github.ref_name, 'feature/')
+        run: |
+          echo "Running on feature branch: ${{ github.ref_name }}"
+
+      # ── Condition: NOT main (any other branch) ────────────────────────────
+      - name: Not on main branch
+        if: github.ref_name != 'main'
+        run: |
+          echo "Running on branch: ${{ github.ref_name }} (not main)"
+
+      # ── Condition: check the event type ───────────────────────────────────
+      - name: Only on manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "This was triggered manually via workflow_dispatch"
+
+      # ── Condition: combined with && ────────────────────────────────────────
+      - name: Main AND push event
+        if: github.ref_name == 'main' && github.event_name == 'push'
+        run: echo "Auto-triggered push to main — consider deploying!"
+
+      # Always print a summary
+      - name: Always print branch info
+        run: |
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Event:  ${{ github.event_name }}"
+          echo "Actor:  ${{ github.actor }}"
+
+  # ─── JOB 2: Status function conditions ──────────────────────────────────────
+  # Status functions let steps react to whether earlier steps passed or failed.
+  status-functions:
+    name: Status Function Conditions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # This step intentionally fails so we can demonstrate failure handling.
+      - name: Step that will fail
+        id: failing-step
+        continue-on-error: true           # allows the job to continue despite failure
+        run: |
+          echo "This step is about to fail..."
+          exit 1                          # simulate a failure
+
+      # ── success() — only run if all previous steps succeeded ─────────────
+      # Without any if:, this is the DEFAULT behavior for every step.
+      - name: Run on success (default)
+        if: success()
+        run: echo "All previous steps succeeded!"   # WON'T run (failing-step failed)
+
+      # ── failure() — only run if a previous step failed ───────────────────
+      - name: Run on failure
+        if: failure()
+        run: |
+          echo "A previous step failed! Running cleanup..."
+          echo "Failed step ID: failing-step"
+          echo "This is where you'd send an alert or clean up resources."
+
+      # ── always() — run regardless of success or failure ──────────────────
+      - name: Always run (teardown)
+        if: always()
+        run: |
+          echo "This ALWAYS runs — even if earlier steps failed."
+          echo "Use this for: cleanup, notifications, teardown."
+
+      # ── cancelled() — run if the workflow was manually cancelled ──────────
+      - name: Run on cancellation
+        if: cancelled()
+        run: echo "Workflow was cancelled — performing emergency cleanup."
+
+  # ─── JOB 3: Step outcome conditions ─────────────────────────────────────────
+  # You can check the outcome of a specific named step.
+  step-outcomes:
+    name: Step Outcome Conditions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Attempt risky operation
+        id: risky
+        continue-on-error: true
+        run: |
+          echo "Attempting risky operation..."
+          # Flip a coin: succeed on even run numbers, fail on odd
+          if [ $(( ${{ github.run_number }} % 2 )) -eq 0 ]; then
+            echo "Success!"
+            exit 0
+          else
+            echo "Failure!"
+            exit 1
+          fi
+
+      # steps.<id>.outcome is "success", "failure", "skipped", or "cancelled"
+      - name: Handle success outcome
+        if: steps.risky.outcome == 'success'
+        run: echo "Risky operation SUCCEEDED on run #${{ github.run_number }}"
+
+      - name: Handle failure outcome
+        if: steps.risky.outcome == 'failure'
+        run: echo "Risky operation FAILED on run #${{ github.run_number }}"
+
+      # steps.<id>.conclusion accounts for continue-on-error
+      # Use "conclusion" for final result, "outcome" for raw result
+      - name: Show outcome vs conclusion
+        if: always()
+        run: |
+          echo "outcome:    ${{ steps.risky.outcome }}"
+          echo "conclusion: ${{ steps.risky.conclusion }}"
+          echo "(conclusion is 'success' even when outcome is 'failure'"
+          echo " IF continue-on-error: true is set)"
+
+  # ─── JOB 4: Job-level conditions ────────────────────────────────────────────
+  # You can skip entire jobs (not just steps) with an "if:" on the job.
+
+  # Only run this job on main branch pushes
+  deploy-job:
+    name: Deploy (main only)
+    runs-on: ubuntu-latest
+    if: github.ref_name == 'main' && github.event_name == 'push'
+
+    steps:
+      - name: Deploy
+        run: |
+          echo "Deploying — only reachable when pushing to main!"
+          echo "Push to a feature branch and this entire job is skipped."
+
+  # This job runs on everything EXCEPT main
+  preview-job:
+    name: Preview Deploy (non-main branches)
+    runs-on: ubuntu-latest
+    if: github.ref_name != 'main'
+
+    steps:
+      - name: Preview deploy
+        run: |
+          echo "Preview deploy for branch: ${{ github.ref_name }}"
+          echo "Push to main and THIS job is skipped instead."

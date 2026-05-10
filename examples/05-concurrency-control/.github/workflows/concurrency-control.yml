@@ -1,0 +1,152 @@
+# =============================================================================
+# Example 05 — Concurrency Control
+#
+# WHAT YOU WILL LEARN:
+#   - What concurrency means in GitHub Actions
+#   - How to prevent duplicate runs with concurrency groups
+#   - The difference between cancelling vs queuing duplicate runs
+#   - How to scope concurrency per-branch vs per-workflow
+#
+# THE PROBLEM WITHOUT CONCURRENCY:
+#   Imagine you push 3 commits to a branch in quick succession.
+#   Without concurrency control, 3 workflow runs start simultaneously.
+#   They compete for resources, waste compute, and produce confusing results.
+#   The 3rd run might finish before the 2nd, leaving you with stale state.
+#
+# THE SOLUTION:
+#   A "concurrency group" is a named slot. Only one run can occupy that slot
+#   at a time. When a second run arrives, it either cancels the first or
+#   waits in a queue — your choice.
+#
+# HOW TO USE:
+#   1. Copy this file to .github/workflows/concurrency-control.yml in your repo
+#   2. Push several commits rapidly to a branch
+#   3. In the Actions tab, watch earlier runs get cancelled automatically
+# =============================================================================
+
+name: "05 - Concurrency Control"
+
+# ─── TRIGGER ──────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: ["**"]      # trigger on any branch push
+  workflow_dispatch:       # allow manual testing
+
+# ─── CONCURRENCY ──────────────────────────────────────────────────────────────
+# This is the key section — defined at the WORKFLOW level so it applies
+# to every job in this workflow.
+#
+# ANATOMY:
+#   group:              — the concurrency group name (a unique key)
+#   cancel-in-progress: — what to do when a new run starts while one is running
+#
+# GROUP KEY DESIGN:
+#   The group key determines what counts as "the same context".
+#   Runs with the same group key cannot run simultaneously.
+#
+#   ${{ github.workflow }} — the workflow name (so we don't clash with other workflows)
+#   ${{ github.ref }}      — the full branch ref (e.g., refs/heads/feature/login)
+#                            Using the ref means each BRANCH gets its own slot.
+#                            A push to "main" doesn't cancel a push to "feature/x".
+#
+#   Common patterns:
+#
+#   Per-branch (most common for CI):
+#     group: ${{ github.workflow }}-${{ github.ref }}
+#
+#   Per-PR (for PR workflows):
+#     group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number }}
+#
+#   Per-workflow (one global slot — very restrictive):
+#     group: ${{ github.workflow }}
+#
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+  # cancel-in-progress: true
+  #   → When a new run starts, the currently-running run is CANCELLED immediately.
+  #   → Best for CI on feature branches — you only care about the latest commit.
+  #   → Saves compute — no wasted time on outdated code.
+  #
+  # cancel-in-progress: false
+  #   → When a new run starts while one is running, the new run QUEUES and waits.
+  #   → Best for deployments — you want every commit deployed in order.
+  #   → Prevents deploy-order race conditions.
+  cancel-in-progress: true
+
+# ─── JOBS ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # This job simulates a slow build (10 seconds) so you can clearly see
+  # the cancellation behavior when you push two commits quickly.
+  slow-build:
+    name: Slow Build (10s) — Cancel Me!
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show concurrency group
+        run: |
+          echo "========================================"
+          echo "  CONCURRENCY INFO"
+          echo "========================================"
+          echo "  Workflow:   ${{ github.workflow }}"
+          echo "  Branch ref: ${{ github.ref }}"
+          echo "  Concurrency group: ${{ github.workflow }}-${{ github.ref }}"
+          echo "  Run number: ${{ github.run_number }}"
+          echo "  Started at: $(date -u)"
+          echo "========================================"
+          echo ""
+          echo "If you push another commit while this is running, THIS"
+          echo "run will be cancelled and the new one will take over."
+
+      - name: Simulate slow build step 1
+        run: |
+          echo "[1/3] Installing dependencies... (3s)"
+          sleep 3
+          echo "Done."
+
+      - name: Simulate slow build step 2
+        run: |
+          echo "[2/3] Compiling... (4s)"
+          sleep 4
+          echo "Done."
+
+      - name: Simulate slow build step 3
+        run: |
+          echo "[3/3] Running tests... (3s)"
+          sleep 3
+          echo "Done."
+
+      - name: Build complete
+        run: |
+          echo ""
+          echo "Build COMPLETE for run #${{ github.run_number }}"
+          echo "If you see this message, this run was NOT cancelled."
+
+# =============================================================================
+# ADVANCED: Per-job concurrency
+#
+# You can also set concurrency at the JOB level instead of workflow level.
+# This lets different jobs have different concurrency behaviour in one workflow.
+#
+# Example:
+#
+#   jobs:
+#     build:
+#       concurrency:
+#         group: build-${{ github.ref }}
+#         cancel-in-progress: true    # cancel old builds, keep latest
+#       ...
+#
+#     deploy:
+#       concurrency:
+#         group: deploy-production    # one deploy at a time globally
+#         cancel-in-progress: false   # queue deploys, don't skip any
+#       ...
+#
+# This pattern gives you fast CI (always test latest code) while ensuring
+# your deployment queue never skips a commit.
+# =============================================================================

@@ -1,0 +1,184 @@
+# =============================================================================
+# Example 10 — Dependency Caching
+#
+# WHAT YOU WILL LEARN:
+#   - Why caching matters (saves 30-120s per run)
+#   - The built-in cache via actions/setup-python's "cache: pip" option
+#   - The manual cache via actions/cache (for full control)
+#   - How cache keys work and what "cache hit" means
+#   - How to use the cache-hit output to skip redundant steps
+#
+# THE PROBLEM:
+#   Every GitHub Actions runner starts fresh — there's nothing pre-installed
+#   beyond the OS. Without caching, "pip install -r requirements.txt" runs
+#   every single time and downloads packages from the internet.
+#   On a large project this can take 60-180 seconds per run.
+#
+# THE SOLUTION:
+#   Cache the downloaded packages between runs. If your requirements.txt
+#   hasn't changed, the cache is restored and pip install is instant.
+#
+# HOW TO USE:
+#   1. Copy this file to .github/workflows/dependency-caching.yml in your repo
+#   2. Create a requirements.txt with a few packages (e.g., requests, flask)
+#   3. Push and watch the first run download everything
+#   4. Push a second time (no requirements.txt change) — watch the cache restore
+# =============================================================================
+
+name: "10 - Dependency Caching"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# ─── JOBS ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ─── JOB 1: Built-in cache via setup-python ─────────────────────────────────
+  # The easiest approach — actions/setup-python handles caching automatically.
+  # Just add "cache: pip" and it figures out the cache key from requirements.txt.
+  builtin-cache:
+    name: Built-in pip Cache (easy)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # This one "cache: pip" line does everything:
+      #   - Computes a cache key from requirements*.txt files
+      #   - Restores the cache if the key matches
+      #   - After the job, saves the pip cache if the key changed
+      - name: Set up Python with pip caching
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: "pip"              # ← the magic line
+
+      - name: Install dependencies
+        run: |
+          # First run: downloads from internet (~30-120s depending on packages)
+          # Subsequent runs with same requirements: restores from cache (~5-10s)
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "No requirements.txt found — creating a minimal one for demo"
+            echo "requests==2.32.3" > requirements.txt
+            pip install -r requirements.txt
+          fi
+
+      - name: Show installed packages
+        run: pip list
+
+  # ─── JOB 2: Manual cache via actions/cache ──────────────────────────────────
+  # Use this when you need fine-grained control over the cache key or path,
+  # or when caching something other than pip packages.
+  manual-cache:
+    name: Manual Cache (full control)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"     # no "cache:" here — we manage it manually
+
+      # ── How the cache key works ──────────────────────────────────────────
+      # The key is a string. If a cached entry exists with this EXACT key,
+      # it's restored (cache hit). If not, the job runs without a cache.
+      # After the job completes, the cache is saved under this key.
+      #
+      # Best practice: include something that changes when your deps change.
+      # hashFiles('requirements*.txt') produces a hash of your requirements
+      # files — it changes ONLY when the file contents change.
+      #
+      # ── restore-keys ────────────────────────────────────────────────────
+      # If the exact key is not found, GitHub tries these fallback keys
+      # in order. A partial match restores an older cache, and the job
+      # updates it at the end. This is called a "cache restore hit" vs a
+      # full "cache hit".
+      - name: Restore pip cache
+        id: cache-pip
+        uses: actions/cache@v4
+        with:
+          # The directory where pip stores downloaded packages
+          path: ~/.cache/pip
+
+          # Primary key: exact match (ideal)
+          key: pip-${{ runner.os }}-py3.14-${{ hashFiles('requirements*.txt') }}
+
+          # Fallback keys: partial match (restores stale cache, better than nothing)
+          restore-keys: |
+            pip-${{ runner.os }}-py3.14-
+            pip-${{ runner.os }}-
+
+      # The "cache-hit" output is "true" only when the primary key matched.
+      - name: Show cache status
+        run: |
+          echo "========================================"
+          echo "  CACHE STATUS"
+          echo "========================================"
+          echo "  cache-hit: ${{ steps.cache-pip.outputs.cache-hit }}"
+          if [ "${{ steps.cache-pip.outputs.cache-hit }}" = "true" ]; then
+            echo "  Result: FULL HIT — packages restored from cache"
+          else
+            echo "  Result: MISS — will download from internet"
+          fi
+          echo "========================================"
+
+      # Skip install if we got a full cache hit — all packages are already there
+      - name: Install dependencies (skipped on cache hit)
+        if: steps.cache-pip.outputs.cache-hit != 'true'
+        run: |
+          echo "Cache miss — installing packages now..."
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "No requirements.txt — creating demo file"
+            echo "flask==3.1.0" > requirements.txt
+            pip install -r requirements.txt
+          fi
+
+      - name: Use installed packages
+        run: |
+          echo "Python: $(python --version)"
+          echo "Installed packages:"
+          pip list
+
+  # ─── JOB 3: Cache key strategies ────────────────────────────────────────────
+  # A demo of different cache key patterns and when to use them.
+  cache-key-strategies:
+    name: Cache Key Strategies Demo
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Explain cache key patterns
+        run: |
+          echo "========================================"
+          echo "  CACHE KEY PATTERN EXAMPLES"
+          echo "========================================"
+          echo ""
+          echo "1. EXACT — changes only when requirements.txt changes:"
+          echo "   pip-ubuntu-py3.14-$(sha256sum requirements.txt 2>/dev/null | cut -c1-8 || echo 'no-file')"
+          echo ""
+          echo "2. WEEKLY — force weekly cache refresh:"
+          WEEK=$(date +%Y-W%V)
+          echo "   pip-ubuntu-$WEEK"
+          echo ""
+          echo "3. DAILY — force daily cache refresh:"
+          DAY=$(date +%Y-%m-%d)
+          echo "   pip-ubuntu-$DAY"
+          echo ""
+          echo "4. BRANCH-SCOPED — different cache per branch:"
+          echo "   pip-ubuntu-${{ github.ref_name }}-$(sha256sum requirements.txt 2>/dev/null | cut -c1-8 || echo 'no-file')"
+          echo ""
+          echo "Tip: Include runner.os in the key so Linux/Mac/Windows"
+          echo "don't share caches (packages are OS-specific binaries)."
+          echo "========================================"

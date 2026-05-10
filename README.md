@@ -4,6 +4,18 @@
 
 ---
 
+## ⭐ Support This Course
+
+If this course helps you, the kindest thing you can do is:
+
+- **⭐ Star this repository** — it helps others discover the course and takes just one click
+- **🍴 Fork it** — forking is how you follow along; every fork also helps the course reach more learners
+- **📢 Share it** — pass it on to a teammate, post it in a community, or mention it in a blog post
+
+This course is free and always will be. Stars and forks are the only way to know it's useful — thank you!
+
+---
+
 ## What You Will Learn
 
 This course takes you from zero knowledge of GitHub Actions to building production-grade CI/CD pipelines. You will understand not just *how* to write workflows, but *why* things work the way they do.
@@ -121,10 +133,32 @@ cat module-01-yaml-fundamentals/README.md
 
 ---
 
+## Standalone Examples
+
+In addition to the course modules, there is an [`examples/`](./examples/) directory with 10 short, focused examples — one concept each. These are ideal as quick references or for learners who want to try a specific concept without working through a full module.
+
+| # | Example | Topic |
+|---|---|---|
+| 01 | [Push Trigger](./examples/01-push-trigger/) | Branch/path filters on push |
+| 02 | [Pull Request Events](./examples/02-pull-request-events/) | PR activity types and metadata |
+| 03 | [Scheduled Cron](./examples/03-scheduled-cron/) | Time-based triggers |
+| 04 | [Manual Dispatch](./examples/04-manual-dispatch/) | `workflow_dispatch` with inputs |
+| 05 | [Concurrency Control](./examples/05-concurrency-control/) | Cancel duplicate runs |
+| 06 | [Environment Variables](./examples/06-environment-variables/) | Scopes, built-ins, secrets pattern |
+| 07 | [Job Outputs](./examples/07-job-outputs/) | Pass data between jobs |
+| 08 | [Conditional Logic](./examples/08-conditional-logic/) | `if:`, `failure()`, `always()` |
+| 09 | [Matrix Builds](./examples/09-matrix-builds/) | Parallel multi-version jobs |
+| 10 | [Dependency Caching](./examples/10-dependency-caching/) | Faster pip installs |
+
+Each example is a single workflow YAML with heavy comments, plus a README explaining the concept, how to try it, and common mistakes. No additional setup required.
+
+---
+
 ## Additional Resources
 
 | Resource | Description |
 |---|---|
+| `examples/` | 10 standalone concept examples (copy-and-run) |
 | `docs/getting-started.md` | Detailed environment setup guide |
 | `docs/glossary.md` | GitHub Actions glossary with examples |
 | `docs/resources.md` | Official docs, playgrounds, cheat sheets |
@@ -191,3 +225,18 @@ github-actions-master-class/
 ## License
 
 MIT — free to use, share, and adapt for learning purposes.
+
+---
+
+## 🙏 Found This Useful?
+
+If this course saved you time or helped you learn something new, consider:
+
+| Action | Why it helps |
+|---|---|
+| ⭐ **Star the repo** | Helps other learners find this course through GitHub search and trending |
+| 🍴 **Fork it** | Creates your own copy to experiment with — and signals to others it's worth a look |
+| 📣 **Share with your team** | The best way to learn is alongside others — share the link in Slack, Discord, or LinkedIn |
+| 🐛 **Open an issue** | Found a mistake or have a suggestion? Issues are always welcome |
+
+Every star genuinely makes a difference — thank you for learning here. 🚀
