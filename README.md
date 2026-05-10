@@ -188,12 +188,29 @@ github-actions-master-class/
 │   ├── getting-started.md
 │   ├── glossary.md
 │   └── resources.md
+├── examples/                          <- 10 standalone concept examples
+│   ├── README.md
+│   ├── 01-push-trigger/
+│   ├── 02-pull-request-events/
+│   ├── 03-scheduled-cron/
+│   ├── 04-manual-dispatch/
+│   ├── 05-concurrency-control/
+│   ├── 06-environment-variables/
+│   ├── 07-job-outputs/
+│   ├── 08-conditional-logic/
+│   ├── 09-matrix-builds/
+│   └── 10-dependency-caching/        <- each has README.md + .github/workflows/
 ├── module-00-prerequisites/
+│   └── README.md
 ├── module-01-yaml-fundamentals/
-│   ├── examples/
-│   └── exercises/
+│   ├── README.md
+│   ├── examples/                      <- 6 annotated YAML files
+│   └── exercises/                     <- 2 exercises with solutions
 ├── module-02-git-fundamentals/
+│   ├── README.md
 │   └── docs/
+│       ├── git-cheatsheet.md
+│       └── github-flow.md
 ├── module-03-github-actions-intro/
 │   └── project/.github/workflows/
 ├── module-04-workflow-triggers/
@@ -201,12 +218,23 @@ github-actions-master-class/
 ├── module-05-jobs-and-steps/
 │   └── project/.github/workflows/
 ├── module-06-secrets-variables/
+│   ├── README.md
 │   ├── docs/
+│   │   └── security-best-practices.md
 │   └── project/.github/workflows/
 ├── module-07-dependent-jobs/
 │   └── project/.github/workflows/
 ├── module-08-ci-pipeline/
-│   └── project/                       <- Real Python 3.14 Flask app + CI
+│   └── project/                       <- Python 3.14 Flask app + full CI
+│       ├── .flake8
+│       ├── requirements.txt
+│       ├── requirements-dev.txt
+│       ├── src/
+│       │   ├── app.py
+│       │   └── server.py
+│       ├── tests/
+│       │   └── test_app.py
+│       └── .github/workflows/
 ├── module-09-cd-pipeline/
 │   └── project/.github/workflows/
 ├── module-10-matrix-advanced/
@@ -217,7 +245,14 @@ github-actions-master-class/
 │           ├── workflows/
 │           └── actions/               <- Composite actions
 └── module-12-real-world-cicd/
-    └── project/                       <- Full-stack app + pipeline
+    └── project/                       <- Full-stack app + production pipeline
+        ├── Dockerfile
+        ├── requirements.txt
+        ├── src/
+        │   └── app.py
+        ├── tests/
+        │   └── test_app.py
+        └── .github/workflows/
 ```
 
 ---
